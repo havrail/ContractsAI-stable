@@ -32,7 +32,7 @@ class LLMClient:
         if not self.is_connected:
             return {}
 
-        # 1. System Prompt (DÜZELTİLDİ: Tek parça string halinde)
+        # 1. System Prompt (Tek parça string halinde düzeltildi)
         system_prompt = """Extract contract data as JSON. 
 WARNING: Be precise. Do NOT hallucinate.
 
@@ -65,7 +65,6 @@ Output JSON:
 """
 
         # 2. Context Optimization (Metin çok uzunsa başını ve sonunu birleştir)
-        # İmzalar ve adresler genelde en sonda olduğu için sadece ilk 4000 karakteri almak yanlıştır.
         max_chars = 12000 
         if len(text) > max_chars:
             half = max_chars // 2
@@ -107,21 +106,18 @@ Output JSON:
 
         last_error = None
         
-        # 3. Request & Retry Mechanism (Geliştirilmiş Hata Yönetimi)
-        for attempt in range(2): # 2 deneme yeterli
+        # 3. Request & Retry Mechanism
+        for attempt in range(2): 
             try:
-                # Timeout süresini 120 saniyeye çıkardık
                 resp = requests.post(self.api_url, json=payload, timeout=120)
                 
                 if resp.status_code == 200:
                     content = resp.json()["choices"][0]["message"]["content"]
-                    # Markdown code block temizliği
                     content = content.replace("```json", "").replace("```", "").strip()
                     match = re.search(r"\{.*\}", content, re.DOTALL)
                     if match:
                         return json.loads(match.group(0))
                 
-                # Başarılı değilse hatayı kaydet (örn: HTTP 400 - Context Limit Exceeded)
                 last_error = f"HTTP {resp.status_code}: {resp.text[:500]}"
                 logger.warning(f"LLM attempt {attempt+1} failed: {last_error}")
                 
@@ -130,33 +126,22 @@ Output JSON:
                 logger.warning(f"LLM attempt {attempt+1} exception: {e}")
                 time.sleep(1)
 
-        # 4. Vision Fallback (Hata alırsa Metin Moduna geç)
+        # 4. Vision Fallback
         if images:
-            # Hatayı loga açıkça yazıyoruz ki neden başarısız olduğunu görelim
             logger.error(f"Vision request FAILED. Reason: {last_error}")
             logger.info("Retrying with TEXT ONLY mode...")
-            # Resimsiz olarak kendini tekrar çağırır
             return self.get_analysis(text, filename=filename, images=None, filename_date=filename_date)
 
         return {}
 
     def detect_telenity_visual(self, image_b64):
-        """Uses Vision LLM to detect Telenity entity from logo/header in image."""
         if not self.is_connected:
             return None
             
         prompt = """
 Look at this document image. Identify which Telenity company this document belongs to based on the logo, header, or letterhead.
-
-Options:
-- Telenity FZE (UAE, Dubai)
-- Telenity Inc (USA, Monroe)
-- Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş. (Turkey, Istanbul)
-- Telenity Systems Software India Private Limited (India, Noida)
-
-Respond with ONLY the exact company name from the options above, or "Unknown" if you cannot determine it.
+Respond with ONLY the exact company name or "Unknown".
 """
-        
         payload = {
             "model": self.model_name,
             "messages": [
@@ -179,15 +164,10 @@ Respond with ONLY the exact company name from the options above, or "Unknown" if
             resp = requests.post(self.api_url, json=payload, timeout=60)
             if resp.status_code == 200:
                 content = resp.json()["choices"][0]["message"]["content"].strip()
-                # Map response to our codes
-                if "FZE" in content or "Dubai" in content:
-                    return "FzE - Telenity UAE", "Telenity FZE"
-                elif "Inc" in content or "Monroe" in content:
-                    return "TU - Telenity USA", "Telenity Inc"
-                elif "İletişim" in content or "Turkey" in content or "Istanbul" in content:
-                    return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş."
-                elif "India" in content or "Noida" in content:
-                    return "TI - Telenity India", "Telenity Systems Software India Private Limited"
+                if "FZE" in content or "Dubai" in content: return "FzE - Telenity UAE", "Telenity FZE"
+                elif "Inc" in content or "Monroe" in content: return "TU - Telenity USA", "Telenity Inc"
+                elif "İletişim" in content or "Turkey" in content or "Istanbul" in content: return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş."
+                elif "India" in content or "Noida" in content: return "TI - Telenity India", "Telenity Systems Software India Private Limited"
         except Exception as e:
             logger.error(f"Vision Telenity detection failed: {e}")
         
