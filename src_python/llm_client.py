@@ -28,25 +28,41 @@ class LLMClient:
                 continue
         return False, "LM Studio bulunamadı."
 
-   def get_analysis(self, text, filename=None, images=None, filename_date=None):
+    def get_analysis(self, text, filename=None, images=None, filename_date=None):
         if not self.is_connected:
             return {}
 
-        # 1. System Prompt
-        system_prompt = """Extract contract data as JSON. Use ONLY these options:
-doc_type: {doc_types}
-company_type: {company_types}
-text_signature_status: Fully Signed|Telenity Signed|Counterparty Signed
+        # 1. System Prompt (DÜZELTİLDİ: Tek parça string halinde)
+        system_prompt = """Extract contract data as JSON. 
+WARNING: Be precise. Do NOT hallucinate.
 
-Required fields:
-- contract_name: title only (no address/date)
-- signing_party: non-Telenity party name
-- country: signing party country
-- address: signing party FULL address (check entire doc - start, signature block, parties section). NOT Telenity addresses (Maslak, Monroe, Dubai)
-- signed_date: YYYY-MM-DD (use filename date if provided, else from doc)
-- found_telenity_name: exact Telenity entity name in doc (e.g. "Telenity FZE", "Telenity İletişim Sistemleri...")
+Field Rules:
+1. doc_type: Must be exactly one of: {doc_types}. If unsure, pick closest.
+2. company_type: Must be exactly one of: {company_types}.
+3. contract_name: extract the specific TITLE of the agreement. 
+   - Good: "Master Services Agreement", "Non-Disclosure Agreement for Project X"
+   - Bad: "Agreement", "Contract", "Page 1". 
+   - Do NOT include dates or addresses in the title.
+4. address: Find the full address of the Counterparty (NOT Telenity). 
+   - Look at the VERY END of the document (signature block).
+   - Look for 'Registered Office', 'Principal Place of Business'.
+5. country: Extract the country from the address found above.
+6. signed_date: Look for handwritten dates in signature blocks or "Effective Date". Format: YYYY-MM-DD.
+7. found_telenity_name: Find exact Telenity entity name in doc (e.g. "Telenity FZE").
 
-Rules: Fix OCR errors (lstanbul→İstanbul). No placeholders (<InsertDate>). Prioritize filename date. Find address carefully (often after "Adres:", "Address:", "Mukim:")."""
+Output JSON:
+{{
+  "contract_name": "String",
+  "doc_type": "String",
+  "company_type": "String",
+  "signing_party": "String",
+  "country": "String",
+  "address": "String",
+  "signed_date": "YYYY-MM-DD",
+  "text_signature_status": "String",
+  "found_telenity_name": "String"
+}}
+"""
 
         # 2. Context Optimization (Metin çok uzunsa başını ve sonunu birleştir)
         # İmzalar ve adresler genelde en sonda olduğu için sadece ilk 4000 karakteri almak yanlıştır.
@@ -125,22 +141,54 @@ Output JSON:
         return {}
 
     def detect_telenity_visual(self, image_b64):
-        # (Bu metodunuz zaten fena değil, aynen kalabilir)
-        if not self.is_connected: return None
-        prompt = "Look at this document header/footer. Identify the exact Telenity Company Name (e.g. Telenity FZE, Telenity Inc, Telenity İletişim). Return ONLY the name."
+        """Uses Vision LLM to detect Telenity entity from logo/header in image."""
+        if not self.is_connected:
+            return None
+            
+        prompt = """
+Look at this document image. Identify which Telenity company this document belongs to based on the logo, header, or letterhead.
+
+Options:
+- Telenity FZE (UAE, Dubai)
+- Telenity Inc (USA, Monroe)
+- Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş. (Turkey, Istanbul)
+- Telenity Systems Software India Private Limited (India, Noida)
+
+Respond with ONLY the exact company name from the options above, or "Unknown" if you cannot determine it.
+"""
+        
         payload = {
             "model": self.model_name,
-            "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}]}],
-            "temperature": 0.1
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+                        }
+                    ]
+                }
+            ],
+            "temperature": 0.1,
+            "stream": False,
         }
+        
         try:
             resp = requests.post(self.api_url, json=payload, timeout=60)
             if resp.status_code == 200:
                 content = resp.json()["choices"][0]["message"]["content"].strip()
-                if "FZE" in content or "Dubai" in content: return "FzE - Telenity UAE", "Telenity FZE"
-                elif "Inc" in content or "Monroe" in content: return "TU - Telenity USA", "Telenity Inc"
-                elif "İletişim" in content or "Turkey" in content: return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş."
-                elif "India" in content: return "TI - Telenity India", "Telenity Systems Software India Private Limited"
+                # Map response to our codes
+                if "FZE" in content or "Dubai" in content:
+                    return "FzE - Telenity UAE", "Telenity FZE"
+                elif "Inc" in content or "Monroe" in content:
+                    return "TU - Telenity USA", "Telenity Inc"
+                elif "İletişim" in content or "Turkey" in content or "Istanbul" in content:
+                    return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş."
+                elif "India" in content or "Noida" in content:
+                    return "TI - Telenity India", "Telenity Systems Software India Private Limited"
         except Exception as e:
-            logger.error(f"Vision detection failed: {e}")
+            logger.error(f"Vision Telenity detection failed: {e}")
+        
         return None
