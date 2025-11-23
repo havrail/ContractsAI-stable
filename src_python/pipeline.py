@@ -5,7 +5,7 @@ import base64
 import time
 import traceback
 import hashlib
-import re  # Regex için gerekli
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any, Callable
 
@@ -133,8 +133,8 @@ class PipelineManager:
                 logger.error(f"Error fetching high-res page {page_num}: {e}")
         return final_images
 
-    # YENİ EKLENEN TEMİZLİK FONKSİYONU (CLASS METHODU OLARAK BURADA OLMALI)
     def _clean_signing_party(self, party_name):
+        """Signing Party ismini temizler (Telenity'yi çıkarır)."""
         if not party_name: return ""
         
         # Sadece Telenity yazıyorsa boşalt
