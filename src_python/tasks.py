@@ -7,6 +7,8 @@ import traceback
 import os
 import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
+from requests.exceptions import RequestException
+from sqlalchemy.exc import OperationalError
 
 # Initialize Sentry for Celery workers
 SENTRY_DSN = os.getenv('SENTRY_DSN')
@@ -24,7 +26,17 @@ if SENTRY_DSN:
 
 
 
-@celery_app.task(bind=True, name='tasks.process_analysis_job')
+# YENİ HALİ:
+@celery_app.task(
+    bind=True, 
+    name='tasks.process_analysis_job',
+    # Hangi hatalarda tekrar denesin? (Ağ hatası, DB kilitlenmesi, Bağlantı kopması)
+    autoretry_for=(RequestException, OperationalError, ConnectionError),
+    # Her denemede bekleme süresini katlayarak artır (örn: 2sn, 4sn, 8sn...)
+    retry_backoff=True, 
+    # Maksimum kaç kez tekrar denesin?
+    max_retries=3
+)
 def process_analysis_job(self, job_id: int, folder_path: str):
     """
     Celery task for processing analysis jobs.
