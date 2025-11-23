@@ -73,41 +73,49 @@ class PipelineManager:
             b64_list.append(base64.b64encode(buf.getvalue()).decode("utf-8"))
         return b64_list
 
-    def identify_key_pages(self, full_path: str, num_pages: int) -> List[int]:
+  def identify_key_pages(self, full_path: str, num_pages: int) -> List[int]:
         """
-        STRATEJI: Hızlı Ön Tarama (Low-Res Scan)
-        Tüm sayfaları düşük kalitede çevirip görsel imza (mürekkep) arar.
-        İmzalı sayfaların indekslerini döndürür.
+        STRATEJI: Hızlı Ön Tarama + Akıllı Eleme
         """
         signature_pages = set()
-        
-        # İlk sayfa her zaman bağlam (context) için gereklidir
-        signature_pages.add(0)
+        signature_pages.add(0) # İlk sayfa (Header için) her zaman lazım
 
-        # Eğer dosya çok büyükse (örn: 50+ sayfa) ve native PDF ise, 
-        # sadece sona bakmak isteyebiliriz ama kullanıcı isteği üzerine
-        # "başa alıp tarama" yapıyoruz.
-        
         try:
-            # 1. Hızlı Tarama (100 DPI)
             logger.info(f"Scanning {num_pages} pages at {SCAN_DPI} DPI for signatures...")
             low_res_images = convert_from_path(full_path, dpi=SCAN_DPI, poppler_path=POPPLER_PATH)
             
-            # 2. Görsel İmza Arama
             for i, img in enumerate(low_res_images):
                 if ImageProcessor.detect_visual_signature(img):
-                    logger.info(f"Signature detected visually on page {i+1}")
+                    # logger.info(f"Signature detected on page {i+1}") -> Log kirliliğini azaltmak için kapattım
                     signature_pages.add(i)
             
-            # Eğer hiç imza bulunamadıysa, en azından son sayfayı ekle (Fallback)
-            if len(signature_pages) == 1: # Sadece sayfa 0 varsa
+            # Fallback: Hiç imza yoksa son sayfayı ekle
+            if len(signature_pages) == 1:
                 signature_pages.add(num_pages - 1)
                 
         except Exception as e:
-            logger.error(f"Scan signature error: {e}. Falling back to First/Last.")
+            logger.error(f"Scan signature error: {e}. Fallback to First/Last.")
             signature_pages.add(num_pages - 1)
 
-        return sorted(list(signature_pages))
+        # KRİTİK OPTİMİZASYON: LLM Payload Limiti
+        # Eğer çok fazla sayfada (örn: >4) imza tespit edildiyse (footer hatası vb.),
+        # hepsini gönderip LLM'i çökertme. Sadece stratejik olanları seç.
+        sorted_pages = sorted(list(signature_pages))
+        
+        if len(sorted_pages) > 4:
+            logger.warning(f"Too many signature pages detected ({len(sorted_pages)}). Limiting to First and Last 2.")
+            # Strateji: 
+            # 1. İlk Sayfa (0) -> Header/Taraflar için
+            # 2. Son Tespit Edilen Sayfa -> Muhtemelen gerçek imza sayfası
+            # 3. Sondan bir önceki -> Ek imza/kaşe ihtimali
+            limited_set = {0}
+            limited_set.add(sorted_pages[-1]) # En sonuncusu
+            if len(sorted_pages) > 2:
+                limited_set.add(sorted_pages[-2]) # Sondan bir önceki
+            
+            return sorted(list(limited_set))
+
+        return sorted_pages
 
     def get_optimized_images_for_llm(self, full_path: str, key_indices: List[int]) -> List[Any]:
         """
