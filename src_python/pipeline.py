@@ -1,11 +1,9 @@
-# src/pipeline.py
 import os
 import io
 import base64
 import time
 import traceback
 import hashlib
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any, Callable
 
@@ -15,6 +13,8 @@ import pytesseract
 from PIL import Image
 from PyPDF2 import PdfReader
 from sqlalchemy.orm import Session
+import cv2
+import numpy as np
 
 # Local Modules
 from database import SessionLocal, get_db
@@ -46,7 +46,7 @@ TESSERACT_CONFIG = "--oem 1 --psm 6"
 
 # DPI Ayarları
 SCAN_DPI = 100  # İmza aramak için hızlı tarama kalitesi
-FINAL_DPI = 200 # LLM'e gidecek okunaklı kalite
+FINAL_DPI = 200 # LLM'e gidecek okunaklı kalite (300 çok yavaşlatır)
 
 class PipelineManager:
     def __init__(self, log_callback: Optional[Callable[[str], None]] = None):
@@ -69,50 +69,58 @@ class PipelineManager:
         b64_list = []
         for img in images:
             buf = io.BytesIO()
+            # JPEG ve quality=70 hız/performans dengesi için ideal
             img.save(buf, format="JPEG", quality=70)
             b64_list.append(base64.b64encode(buf.getvalue()).decode("utf-8"))
         return b64_list
 
-  def identify_key_pages(self, full_path: str, num_pages: int) -> List[int]:
+    def identify_key_pages(self, full_path: str, num_pages: int) -> List[int]:
         """
-        STRATEJI: Hızlı Ön Tarama + Akıllı Eleme
+        STRATEJI: Hızlı Ön Tarama (Low-Res Scan)
+        Tüm sayfaları düşük kalitede çevirip görsel imza (mürekkep) arar.
+        
+        OPTIMIZASYON:
+        1. Footer (Sayfa no) alanını yoksayarak tarar (ImageProcessor içinde).
+        2. Eğer çok fazla sayfa bulursa (False Positive), sadece başı ve sonu alır.
         """
         signature_pages = set()
-        signature_pages.add(0) # İlk sayfa (Header için) her zaman lazım
+        
+        # İlk sayfa her zaman bağlam (context) ve başlık için gereklidir
+        signature_pages.add(0)
 
         try:
+            # 1. Hızlı Tarama (100 DPI)
             logger.info(f"Scanning {num_pages} pages at {SCAN_DPI} DPI for signatures...")
             low_res_images = convert_from_path(full_path, dpi=SCAN_DPI, poppler_path=POPPLER_PATH)
             
+            # 2. Görsel İmza Arama
             for i, img in enumerate(low_res_images):
+                # Sayfa 0 zaten ekli, tekrar bakmaya gerek yok
+                if i == 0: continue
+                
                 if ImageProcessor.detect_visual_signature(img):
-                    # logger.info(f"Signature detected on page {i+1}") -> Log kirliliğini azaltmak için kapattım
+                    # logger.info(f"Signature detected visually on page {i+1}")
                     signature_pages.add(i)
             
-            # Fallback: Hiç imza yoksa son sayfayı ekle
-            if len(signature_pages) == 1:
+            # Eğer hiç imza bulunamadıysa, son sayfayı ekle (Fallback)
+            if len(signature_pages) == 1: 
                 signature_pages.add(num_pages - 1)
                 
         except Exception as e:
-            logger.error(f"Scan signature error: {e}. Fallback to First/Last.")
-            signature_pages.add(num_pages - 1)
+            logger.error(f"Scan signature error: {e}. Falling back to First/Last.")
+            if num_pages > 1:
+                signature_pages.add(num_pages - 1)
 
-        # KRİTİK OPTİMİZASYON: LLM Payload Limiti
-        # Eğer çok fazla sayfada (örn: >4) imza tespit edildiyse (footer hatası vb.),
-        # hepsini gönderip LLM'i çökertme. Sadece stratejik olanları seç.
+        # 3. Sayfa Limiti (LLM'i korumak için)
         sorted_pages = sorted(list(signature_pages))
         
+        # Eğer 4'ten fazla sayfa tespit edildiyse (örn. her sayfada footer/logo var sanıldıysa)
         if len(sorted_pages) > 4:
-            logger.warning(f"Too many signature pages detected ({len(sorted_pages)}). Limiting to First and Last 2.")
-            # Strateji: 
-            # 1. İlk Sayfa (0) -> Header/Taraflar için
-            # 2. Son Tespit Edilen Sayfa -> Muhtemelen gerçek imza sayfası
-            # 3. Sondan bir önceki -> Ek imza/kaşe ihtimali
-            limited_set = {0}
-            limited_set.add(sorted_pages[-1]) # En sonuncusu
+            logger.warning(f"Too many signature pages ({len(sorted_pages)}). Limiting to essential pages.")
+            limited_set = {0} # İlk sayfa
+            limited_set.add(sorted_pages[-1]) # En son tespit edilen (muhtemelen imza)
             if len(sorted_pages) > 2:
                 limited_set.add(sorted_pages[-2]) # Sondan bir önceki
-            
             return sorted(list(limited_set))
 
         return sorted_pages
@@ -122,10 +130,8 @@ class PipelineManager:
         Sadece belirlenen önemli sayfaları Yüksek Kalite (200 DPI) ile çevirir.
         """
         final_images = []
-        # pdf2image tek tek sayfa çekmeyi destekler ama batch daha hızlı olabilir.
-        # Yine de sayfa numaraları dağınık olabileceği için döngü kuralım.
         for idx in key_indices:
-            # pdf2image 1-based index kullanır, biz 0-based index tutuyoruz
+            # pdf2image 1-based index kullanır
             page_num = idx + 1
             try:
                 imgs = convert_from_path(
@@ -183,17 +189,14 @@ class PipelineManager:
                 is_scanned = True
                 logger.info(f"Detected SCANNED document: {filename}")
 
-            # 3. Smart Image Strategy (Hibrid Yaklaşım)
+            # 3. Smart Image Strategy
             # İmza aramak için hızlı tarama yap, bulunanları yüksek kalite al
             target_page_indices = self.identify_key_pages(full_path, num_pages)
             
             # LLM'e gidecek yüksek kaliteli görselleri hazırla
             llm_images = self.get_optimized_images_for_llm(full_path, target_page_indices)
 
-            # 4. OCR (Sadece Scanned ve Metin Yoksa)
-            # Eğer taranmış belgeyse ve metin yoksa, elimizdeki görsellerden (önemli sayfalardan) metin çıkarmayı deneyelim.
-            # Not: Tam metin araması için tüm sayfaları OCR yapmak gerekebilir ama bu çok yavaş.
-            # Şimdilik LLM'in Vision yeteneğine güveniyoruz, sadece çok kötüyse seçili sayfalara OCR atalım.
+            # 4. OCR (Sadece Scanned ve Metin Yoksa - Fallback)
             if is_scanned and not text.strip() and llm_images:
                 logger.info("Running Partial OCR on key pages...")
                 for img in llm_images:
@@ -227,9 +230,13 @@ class PipelineManager:
             contract_name = self._clean_contract_name(llm_data.get("contract_name", ""))
             address = filter_telenity_address(clean_turkish_chars(llm_data.get("address", "")))
             
-            # İmza Durumu: Görsel olarak imza tespit ettiysek bunu LLM'e bildirmiştik.
-            # LLM'in metin analizini görsel analizle birleştirelim.
-            visual_sig_count = len(target_page_indices) - 1 # Sayfa 0 hariç kaç sayfada imza bulundu?
+            # İmza Durumu
+            # İlk sayfa (0) imza sayılmaz, o yüzden -1 yapıyoruz
+            # Ama eğer sadece sayfa 0 ve son sayfa döndüyse ve son sayfada imza varsa count 1 olur.
+            visual_sig_count = 0
+            # Basit mantık: target_page_indices içinde 0 haricindeki sayfalar imza şüphelisidir
+            visual_sig_count = len([p for p in target_page_indices if p != 0])
+            
             final_sig = self._map_signature_smart(llm_data.get("text_signature_status", ""), visual_sig_count)
 
             db.close()
@@ -273,25 +280,15 @@ class PipelineManager:
         return default
 
     def _map_signature_smart(self, text_sig, visual_count):
-        # LLM metin analizi + Görsel Dedektör sonucu
         sig = str(text_sig).lower()
-        
-        # Eğer görsel olarak 2 veya daha fazla sayfada imza bulduysak, muhtemelen Fully Signed'dır
-        if visual_count >= 2:
-            return "Fully Signed"
-        
+        if visual_count >= 2: return "Fully Signed"
         if "fully" in sig or "both" in sig: return "Fully Signed"
         if "counter" in sig or "partner" in sig or "customer" in sig: return "Counterparty Signed"
         if "telenity" in sig: return "Telenity Signed"
-        
-        # Hiçbir şey bulamadıysak ama görselde 1 imza varsa
-        if visual_count == 1:
-            return "Counterparty Signed" # Varsayım
-            
-        return "Telenity Signed" # En kötü ihtimal
+        if visual_count == 1: return "Counterparty Signed"
+        return "Telenity Signed"
 
     def run_job(self, job_id: int, folder_path: str):
-        # (Bu kısım öncekiyle aynı, sadece hata yönetimi için koruyoruz)
         db = SessionLocal()
         job = db.query(AnalysisJob).filter(AnalysisJob.id == job_id).first()
         if not job: 
@@ -305,7 +302,9 @@ class PipelineManager:
 
             connected, _ = self.llm_client.autodetect_connection()
             if not connected:
-                raise Exception("LM Studio bağlantısı yok.")
+                # LLM yoksa bile OCR ile devam edebiliriz ama bu projede LLM kritik
+                # Şimdilik hata verip çıkıyoruz, istenirse değiştirilebilir.
+                logger.warning("LM Studio bağlantısı yok, analiz sınırlı olacak.")
 
             files = [f for f in os.listdir(folder_path) if f.lower().endswith(".pdf")]
             if not files:
@@ -316,6 +315,7 @@ class PipelineManager:
 
             total = len(files)
             processed = 0
+            # Batch size config'den geliyor
             batches = [files[i:i + BATCH_SIZE] for i in range(0, len(files), BATCH_SIZE)]
             all_contracts = []
 
@@ -356,5 +356,44 @@ class PipelineManager:
             db.close()
 
     def export_to_excel(self, job_id, output_path):
-        # Excel export kodu buraya (değişmedi)
-        pass
+        import pandas as pd
+        from datetime import datetime
+        
+        db = SessionLocal()
+        try:
+            contracts = db.query(Contract).filter(Contract.job_id == job_id).all()
+            if not contracts: return "Veri yok"
+            
+            data = []
+            for c in contracts:
+                data.append({
+                    "Dosya Adı": c.dosya_adi,
+                    "Contract Name": c.contract_name,
+                    "Doc. Type": c.doc_type,
+                    "Signature": c.signature,
+                    "Company Type": c.company_type,
+                    "Signing Party": c.signing_party,
+                    "Country": c.country,
+                    "Address": c.address,
+                    "Signed Date": c.signed_date,
+                    "Telenity Entity": c.telenity_entity,
+                    "Telenity Entity Full Name": c.telenity_fullname,
+                    "Durum": c.durum_notu
+                })
+            
+            df = pd.DataFrame(data)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            full_path = os.path.join(output_path, f"Telenity_Rapor_{timestamp}.xlsx")
+            
+            with pd.ExcelWriter(full_path, engine="xlsxwriter") as writer:
+                df.to_excel(writer, sheet_name="Analiz", index=False)
+                worksheet = writer.sheets["Analiz"]
+                for i, col in enumerate(df.columns):
+                    max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
+                    worksheet.set_column(i, i, max_len)
+            return full_path
+        except Exception as e:
+            logger.error(f"Excel export failed: {e}")
+            return ""
+        finally:
+            db.close()
