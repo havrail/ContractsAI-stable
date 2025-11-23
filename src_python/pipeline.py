@@ -5,6 +5,7 @@ import base64
 import time
 import traceback
 import hashlib
+import re  # Regex için gerekli
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any, Callable
 
@@ -27,7 +28,7 @@ from utils import (
     extract_date_from_filename, 
     clean_turkish_chars, 
     filter_telenity_address,
-    normalize_country  # <--- YENİ EKLENEN (En tepede olmalı)
+    normalize_country
 )
 from logger import logger
 from cache import cache
@@ -48,7 +49,7 @@ TESSERACT_CONFIG = "--oem 1 --psm 6"
 
 # DPI Ayarları
 SCAN_DPI = 100  # İmza aramak için hızlı tarama kalitesi
-FINAL_DPI = 200 # LLM'e gidecek okunaklı kalite (300 çok yavaşlatır)
+FINAL_DPI = 200 # LLM'e gidecek okunaklı kalite
 
 class PipelineManager:
     def __init__(self, log_callback: Optional[Callable[[str], None]] = None):
@@ -70,47 +71,29 @@ class PipelineManager:
         """Convert PIL images to Base64 for LLM with Resizing."""
         b64_list = []
         for img in images:
-            # GÜNCELLEME: Resmi Küçült (Max 1024px)
-            # Bu, token sayısını ve payload boyutunu ciddi oranda düşürür.
-            # Orijinal 'img' nesnesini bozmamak için kopyasını alıyoruz.
+            # Resmi Küçült (Max 1024px) - LLM performans optimizasyonu
             img_resized = img.copy()
             img_resized.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
             
             buf = io.BytesIO()
-            # Quality 70 -> 60 yapıldı (Vision için yeterli)
             img_resized.save(buf, format="JPEG", quality=60)
             b64_list.append(base64.b64encode(buf.getvalue()).decode("utf-8"))
         return b64_list
 
     def identify_key_pages(self, full_path: str, num_pages: int) -> List[int]:
-        """
-        STRATEJI: Hızlı Ön Tarama (Low-Res Scan)
-        Tüm sayfaları düşük kalitede çevirip görsel imza (mürekkep) arar.
-        
-        OPTIMIZASYON:
-        1. Footer (Sayfa no) alanını yoksayarak tarar (ImageProcessor içinde).
-        2. Eğer çok fazla sayfa bulursa (False Positive), sadece başı ve sonu alır.
-        """
+        """Hızlı Ön Tarama: İmzalı sayfaları bulur."""
         signature_pages = set()
-        
-        # İlk sayfa her zaman bağlam (context) ve başlık için gereklidir
-        signature_pages.add(0)
+        signature_pages.add(0) # İlk sayfa her zaman lazım
 
         try:
-            # 1. Hızlı Tarama (100 DPI)
             logger.info(f"Scanning {num_pages} pages at {SCAN_DPI} DPI for signatures...")
             low_res_images = convert_from_path(full_path, dpi=SCAN_DPI, poppler_path=POPPLER_PATH)
             
-            # 2. Görsel İmza Arama
             for i, img in enumerate(low_res_images):
-                # Sayfa 0 zaten ekli, tekrar bakmaya gerek yok
                 if i == 0: continue
-                
                 if ImageProcessor.detect_visual_signature(img):
-                    # logger.info(f"Signature detected visually on page {i+1}")
                     signature_pages.add(i)
             
-            # Eğer hiç imza bulunamadıysa, son sayfayı ekle (Fallback)
             if len(signature_pages) == 1: 
                 signature_pages.add(num_pages - 1)
                 
@@ -119,27 +102,22 @@ class PipelineManager:
             if num_pages > 1:
                 signature_pages.add(num_pages - 1)
 
-        # 3. Sayfa Limiti (LLM'i korumak için)
         sorted_pages = sorted(list(signature_pages))
         
-        # Eğer 4'ten fazla sayfa tespit edildiyse (örn. her sayfada footer/logo var sanıldıysa)
+        # Çok fazla sayfa varsa (False Positive) sadece kritik olanları al
         if len(sorted_pages) > 4:
             logger.warning(f"Too many signature pages ({len(sorted_pages)}). Limiting to essential pages.")
-            limited_set = {0} # İlk sayfa
-            limited_set.add(sorted_pages[-1]) # En son tespit edilen (muhtemelen imza)
+            limited_set = {0}
+            limited_set.add(sorted_pages[-1])
             if len(sorted_pages) > 2:
-                limited_set.add(sorted_pages[-2]) # Sondan bir önceki
+                limited_set.add(sorted_pages[-2])
             return sorted(list(limited_set))
 
         return sorted_pages
 
     def get_optimized_images_for_llm(self, full_path: str, key_indices: List[int]) -> List[Any]:
-        """
-        Sadece belirlenen önemli sayfaları Yüksek Kalite (200 DPI) ile çevirir.
-        """
         final_images = []
         for idx in key_indices:
-            # pdf2image 1-based index kullanır
             page_num = idx + 1
             try:
                 imgs = convert_from_path(
@@ -153,8 +131,53 @@ class PipelineManager:
                     final_images.append(imgs[0])
             except Exception as e:
                 logger.error(f"Error fetching high-res page {page_num}: {e}")
-        
         return final_images
+
+    # YENİ EKLENEN TEMİZLİK FONKSİYONU (CLASS METHODU OLARAK BURADA OLMALI)
+    def _clean_signing_party(self, party_name):
+        if not party_name: return ""
+        
+        # Sadece Telenity yazıyorsa boşalt
+        if party_name.lower().strip().replace(" ", "") in ["telenity", "telenityfze", "telenityinc"]:
+            return ""
+
+        # " and " ile ayrılmışsa Telenity olmayanı al
+        if " and " in party_name.lower():
+            parts = re.split(r' and | & ', party_name, flags=re.IGNORECASE)
+            for part in parts:
+                if "telenity" not in part.lower():
+                    return part.strip()
+        
+        # Telenity ile başlıyorsa kes (Örn: "Telenity and X")
+        party_name = re.sub(r'(?i)^Telenity.*?(and|&)\s*', '', party_name)
+        
+        return party_name.strip()
+
+    def _clean_contract_name(self, name):
+        if not name: return "Belirtilmemiş"
+        name = name.replace("<InsertDate>", "").strip()
+        if len(name) > 100: name = name[:100]
+        if any(x in name.lower() for x in ["agreement is made", "hereinafter", "entered into"]):
+            return ""
+        return name
+
+    def _map_choice(self, value, options, default="Other"):
+        if not value: return default
+        val = str(value).lower().strip()
+        for opt in options:
+            if val == opt.lower(): return opt
+        for opt in options:
+            if opt.lower() in val: return opt
+        return default
+
+    def _map_signature_smart(self, text_sig, visual_count):
+        sig = str(text_sig).lower()
+        if visual_count >= 2: return "Fully Signed"
+        if "fully" in sig or "both" in sig: return "Fully Signed"
+        if "counter" in sig or "customer" in sig: return "Counterparty Signed"
+        if visual_count == 1: return "Fully Signed" # Görsel imza varsa güven
+        if "telenity" in sig: return "Telenity Signed"
+        return "Telenity Signed"
 
     def process_single_file(self, filename: str, folder_path: str) -> Dict[str, Any]:
         full_path = os.path.join(folder_path, filename)
@@ -198,13 +221,10 @@ class PipelineManager:
                 logger.info(f"Detected SCANNED document: {filename}")
 
             # 3. Smart Image Strategy
-            # İmza aramak için hızlı tarama yap, bulunanları yüksek kalite al
             target_page_indices = self.identify_key_pages(full_path, num_pages)
-            
-            # LLM'e gidecek yüksek kaliteli görselleri hazırla
             llm_images = self.get_optimized_images_for_llm(full_path, target_page_indices)
 
-            # 4. OCR (Sadece Scanned ve Metin Yoksa - Fallback)
+            # 4. OCR (Fallback)
             if is_scanned and not text.strip() and llm_images:
                 logger.info("Running Partial OCR on key pages...")
                 for img in llm_images:
@@ -228,72 +248,28 @@ class PipelineManager:
             # 6. Post-Processing
             telenity_search_text = (llm_data.get("found_telenity_name", "") or "") + " " + text[:2000]
             telenity_code, telenity_full = determine_telenity_entity(telenity_search_text)
-
-def _clean_signing_party(self, party_name):
-        if not party_name: return ""
-        # Telenity kelimesini ve bağlaçları temizle
-        # Örn: "Telenity FZE and Sam Media" -> "Sam Media"
-        
-        # Sadece Telenity yazıyorsa boşalt (Hata)
-        if party_name.lower().strip().replace(" ", "") in ["telenity", "telenityfze", "telenityinc"]:
-            return ""
-
-        # " and " ile ayrılmışsa Telenity olmayanı al
-        if " and " in party_name.lower():
-            parts = re.split(r' and | & ', party_name, flags=re.IGNORECASE)
-            for part in parts:
-                if "telenity" not in part.lower():
-                    return part.strip()
-        
-        # Telenity ile başlıyorsa kes (Örn: "Telenity and X")
-        party_name = re.sub(r'(?i)^Telenity.*?(and|&)\s*', '', party_name)
-        
-        return party_name.strip()
-
-# process_single_file içinde Post-Processing kısmında kullanımı:
-
-            # ... (önceki kodlar)
             
-            # Signing Party Temizliği
-            raw_party = llm_data.get("signing_party", "")
-            final_party = self._clean_signing_party(raw_party)
-
-            contract_name = self._clean_contract_name(llm_data.get("contract_name", ""))
-            
-            # Adres Filtresi (Gelişmiş utils.filter_telenity_address kullanıyor)
-            address = filter_telenity_address(clean_turkish_chars(llm_data.get("address", "")))
-            
-            # Ülke Normalizasyonu
-            raw_country = llm_data.get("country", "")
-            final_country = normalize_country(raw_country)
-
-            # ...
-            
-            return {
-                # ...
-                "signing_party": final_party, # GÜNCELLENDİ
-                "country": final_country,
-                "address": address,
-                # ...
-            }
-            
-            # Vision Fallback for Telenity Logo (Using First Page)
             if USE_VISION_MODEL and (not telenity_code or telenity_code == "Bilinmiyor") and vision_images_b64:
                 vision_res = self.llm_client.detect_telenity_visual(vision_images_b64[0])
                 if vision_res:
                     telenity_code, telenity_full = vision_res
 
+            # Cleaning Steps
             contract_name = self._clean_contract_name(llm_data.get("contract_name", ""))
+            
+            # Party Cleaning
+            raw_party = llm_data.get("signing_party", "")
+            final_party = self._clean_signing_party(raw_party)
+            
+            # Address Filtering
             address = filter_telenity_address(clean_turkish_chars(llm_data.get("address", "")))
             
-            # YENİ: Ülke Normalizasyonu
+            # Country Normalization
             raw_country = llm_data.get("country", "")
             final_country = normalize_country(raw_country)
 
-            # İmza Durumu
-            # İlk sayfa (0) imza sayılmaz, o yüzden 0'ı hariç tutuyoruz
+            # Signature Logic
             visual_sig_count = len([p for p in target_page_indices if p != 0])
-            
             final_sig = self._map_signature_smart(llm_data.get("text_signature_status", ""), visual_sig_count)
 
             db.close()
@@ -303,7 +279,7 @@ def _clean_signing_party(self, party_name):
                 "doc_type": self._map_choice(llm_data.get("doc_type"), DOC_TYPE_CHOICES),
                 "signature": final_sig,
                 "company_type": self._map_choice(llm_data.get("company_type"), COMPANY_CHOICES),
-                "signing_party": llm_data.get("signing_party", ""),
+                "signing_party": final_party,
                 "country": final_country,
                 "address": address,
                 "signed_date": filename_date or llm_data.get("signed_date", ""),
@@ -318,49 +294,6 @@ def _clean_signing_party(self, party_name):
             traceback.print_exc()
             if db: db.close()
             return {"error": str(e), "dosya_adi": filename}
-
-    def _clean_contract_name(self, name):
-        if not name: return "Belirtilmemiş"
-        name = name.replace("<InsertDate>", "").strip()
-        if len(name) > 100: name = name[:100]
-        if any(x in name.lower() for x in ["agreement is made", "hereinafter", "entered into"]):
-            return ""
-        return name
-
-    def _map_choice(self, value, options, default="Other"):
-        if not value: return default
-        val = str(value).lower().strip()
-        for opt in options:
-            if val == opt.lower(): return opt
-        for opt in options:
-            if opt.lower() in val: return opt
-        return default
-
-    def _map_signature_smart(self, text_sig, visual_count):
-        sig = str(text_sig).lower()
-        
-        # 1. Kural: Görsel olarak 2 veya daha fazla sayfa imzalıysa -> KESİN Fully Signed
-        if visual_count >= 2: return "Fully Signed"
-        
-        # 2. Kural: Metin analizinde "fully" veya "both" geçiyorsa -> Fully Signed
-        if "fully" in sig or "both" in sig: return "Fully Signed"
-        
-        # 3. Kural: Metin "Sadece Counterparty" diyorsa -> Counterparty Signed
-        # (Ancak görsel desteklemiyorsa buraya dikkat etmek lazım, şimdilik güvenelim)
-        if "counter" in sig or "customer" in sig: return "Counterparty Signed"
-        
-        # 4. Kural (KRİTİK DEĞİŞİKLİK): Görsel olarak 1 imza sayfası var
-        # Eski kod burada "Counterparty" diyordu. Yanlıştı.
-        # Eğer en az bir imza sayfası varsa ve metin aksini iddia etmiyorsa,
-        # bunun "Fully Signed" olma ihtimali "Counterparty"den yüksektir.
-        if visual_count == 1:
-            return "Fully Signed" 
-            
-        # 5. Kural: Metin Telenity diyorsa
-        if "telenity" in sig: return "Telenity Signed"
-        
-        # Hiçbir veri yoksa varsayılan
-        return "Telenity Signed"
 
     def run_job(self, job_id: int, folder_path: str):
         db = SessionLocal()
