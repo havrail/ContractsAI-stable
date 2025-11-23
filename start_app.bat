@@ -32,6 +32,7 @@ if %errorlevel% neq 0 (
 echo Redis hazir.
 
 :: 3. Start Celery Worker (New Window)
+:: Windows icin --pool=solo parametresi kritik oneme sahiptir.
 echo [3/4] Arka plan isleyici (Worker) baslatiliyor...
 start "ContractsAI Worker (KAPATMAYIN)" cmd /k "cd src_python && celery -A celery_app worker --loglevel=info --pool=solo"
 
