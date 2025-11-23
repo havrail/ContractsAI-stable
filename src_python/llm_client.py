@@ -116,7 +116,7 @@ Output JSON:
         # 3. Request & Retry Mechanism
         for attempt in range(2): 
             try:
-                resp = requests.post(self.api_url, json=payload, timeout=120)
+                resp = requests.post(self.api_url, json=payload, timeout=300)
                 
                 if resp.status_code == 200:
                     content = resp.json()["choices"][0]["message"]["content"]
