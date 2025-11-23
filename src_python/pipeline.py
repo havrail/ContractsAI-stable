@@ -1,3 +1,4 @@
+# src_python/pipeline.py
 import os
 import io
 import base64
@@ -25,7 +26,8 @@ from utils import (
     determine_telenity_entity, 
     extract_date_from_filename, 
     clean_turkish_chars, 
-    filter_telenity_address
+    filter_telenity_address,
+    normalize_country  # <--- YENİ EKLENEN (En tepede olmalı)
 )
 from logger import logger
 from cache import cache
@@ -236,11 +238,12 @@ class PipelineManager:
             contract_name = self._clean_contract_name(llm_data.get("contract_name", ""))
             address = filter_telenity_address(clean_turkish_chars(llm_data.get("address", "")))
             
+            # YENİ: Ülke Normalizasyonu
+            raw_country = llm_data.get("country", "")
+            final_country = normalize_country(raw_country)
+
             # İmza Durumu
-            # İlk sayfa (0) imza sayılmaz, o yüzden -1 yapıyoruz
-            # Ama eğer sadece sayfa 0 ve son sayfa döndüyse ve son sayfada imza varsa count 1 olur.
-            visual_sig_count = 0
-            # Basit mantık: target_page_indices içinde 0 haricindeki sayfalar imza şüphelisidir
+            # İlk sayfa (0) imza sayılmaz, o yüzden 0'ı hariç tutuyoruz
             visual_sig_count = len([p for p in target_page_indices if p != 0])
             
             final_sig = self._map_signature_smart(llm_data.get("text_signature_status", ""), visual_sig_count)
@@ -253,7 +256,7 @@ class PipelineManager:
                 "signature": final_sig,
                 "company_type": self._map_choice(llm_data.get("company_type"), COMPANY_CHOICES),
                 "signing_party": llm_data.get("signing_party", ""),
-                "country": llm_data.get("country", ""),
+                "country": final_country,
                 "address": address,
                 "signed_date": filename_date or llm_data.get("signed_date", ""),
                 "telenity_entity": telenity_code,
@@ -308,8 +311,6 @@ class PipelineManager:
 
             connected, _ = self.llm_client.autodetect_connection()
             if not connected:
-                # LLM yoksa bile OCR ile devam edebiliriz ama bu projede LLM kritik
-                # Şimdilik hata verip çıkıyoruz, istenirse değiştirilebilir.
                 logger.warning("LM Studio bağlantısı yok, analiz sınırlı olacak.")
 
             files = [f for f in os.listdir(folder_path) if f.lower().endswith(".pdf")]
@@ -321,7 +322,6 @@ class PipelineManager:
 
             total = len(files)
             processed = 0
-            # Batch size config'den geliyor
             batches = [files[i:i + BATCH_SIZE] for i in range(0, len(files), BATCH_SIZE)]
             all_contracts = []
 
