@@ -65,12 +65,18 @@ class PipelineManager:
             return None
 
     def _images_to_base64(self, images: List[Any]) -> List[str]:
-        """Convert PIL images to Base64 for LLM."""
+        """Convert PIL images to Base64 for LLM with Resizing."""
         b64_list = []
         for img in images:
+            # GÜNCELLEME: Resmi Küçült (Max 1024px)
+            # Bu, token sayısını ve payload boyutunu ciddi oranda düşürür.
+            # Orijinal 'img' nesnesini bozmamak için kopyasını alıyoruz.
+            img_resized = img.copy()
+            img_resized.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            
             buf = io.BytesIO()
-            # JPEG ve quality=70 hız/performans dengesi için ideal
-            img.save(buf, format="JPEG", quality=70)
+            # Quality 70 -> 60 yapıldı (Vision için yeterli)
+            img_resized.save(buf, format="JPEG", quality=60)
             b64_list.append(base64.b64encode(buf.getvalue()).decode("utf-8"))
         return b64_list
 
