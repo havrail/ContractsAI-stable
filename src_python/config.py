@@ -11,9 +11,11 @@ ROOT_DIR = SRC_DIR.parent
 ENV_PATH = ROOT_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
-# SQLite database file
-# Ensure forward slashes for SQLAlchemy compatibility on Windows
-_db_path = str(SRC_DIR / "contracts_ai.db").replace("\\", "/")
+
+
+# SQLite yerine PostgreSQL bağlantı dizesi
+# DATABASE_URL=postgresql://user:password@db_container:5432/contracts_db
+DB_NAME = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/dbname")
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 # SQLite database file inside the data directory, using forward slashes for compatibility
