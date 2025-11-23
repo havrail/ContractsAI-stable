@@ -228,6 +228,54 @@ class PipelineManager:
             # 6. Post-Processing
             telenity_search_text = (llm_data.get("found_telenity_name", "") or "") + " " + text[:2000]
             telenity_code, telenity_full = determine_telenity_entity(telenity_search_text)
+
+def _clean_signing_party(self, party_name):
+        if not party_name: return ""
+        # Telenity kelimesini ve bağlaçları temizle
+        # Örn: "Telenity FZE and Sam Media" -> "Sam Media"
+        
+        # Sadece Telenity yazıyorsa boşalt (Hata)
+        if party_name.lower().strip().replace(" ", "") in ["telenity", "telenityfze", "telenityinc"]:
+            return ""
+
+        # " and " ile ayrılmışsa Telenity olmayanı al
+        if " and " in party_name.lower():
+            parts = re.split(r' and | & ', party_name, flags=re.IGNORECASE)
+            for part in parts:
+                if "telenity" not in part.lower():
+                    return part.strip()
+        
+        # Telenity ile başlıyorsa kes (Örn: "Telenity and X")
+        party_name = re.sub(r'(?i)^Telenity.*?(and|&)\s*', '', party_name)
+        
+        return party_name.strip()
+
+# process_single_file içinde Post-Processing kısmında kullanımı:
+
+            # ... (önceki kodlar)
+            
+            # Signing Party Temizliği
+            raw_party = llm_data.get("signing_party", "")
+            final_party = self._clean_signing_party(raw_party)
+
+            contract_name = self._clean_contract_name(llm_data.get("contract_name", ""))
+            
+            # Adres Filtresi (Gelişmiş utils.filter_telenity_address kullanıyor)
+            address = filter_telenity_address(clean_turkish_chars(llm_data.get("address", "")))
+            
+            # Ülke Normalizasyonu
+            raw_country = llm_data.get("country", "")
+            final_country = normalize_country(raw_country)
+
+            # ...
+            
+            return {
+                # ...
+                "signing_party": final_party, # GÜNCELLENDİ
+                "country": final_country,
+                "address": address,
+                # ...
+            }
             
             # Vision Fallback for Telenity Logo (Using First Page)
             if USE_VISION_MODEL and (not telenity_code or telenity_code == "Bilinmiyor") and vision_images_b64:
