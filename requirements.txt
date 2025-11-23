@@ -1,0 +1,31 @@
+fastapi
+uvicorn
+python-multipart
+sqlalchemy
+pandas
+XlsxWriter
+pytesseract
+pdf2image
+opencv-python
+numpy
+requests
+packaging
+PyPDF2
+easyocr
+python-dotenv
+alembic
+python-json-logger
+aiohttp
+aiofiles
+
+# Celery Job Queue
+celery[redis]
+redis
+flower
+
+# Error Tracking & Monitoring
+sentry-sdk[fastapi]
+
+
+
+

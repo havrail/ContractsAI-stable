@@ -1,0 +1,58 @@
+# Docker ignore file
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Database (will be mounted as volume)
+*.db
+
+# Node modules
+node_modules/
+contracts-ai-ui/node_modules/
+contracts-ai-ui/dist/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Exports (will be mounted as volume)
+exports/
+
+# Test files
+tests/
+*.test.py
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Temp files
+tmp/
+temp/
+*.tmp

@@ -1,0 +1,397 @@
+[2025-11-23 01:54:39] [INFO] Bağlantı aranıyor...
+[2025-11-23 02:50:25] [INFO] Bağlantı aranıyor...
+[2025-11-23 13:39:00] [INFO] Bağlantı aranıyor...
+[2025-11-23 13:43:46] [WARNING] LLM request failed (attempt 1): HTTPConnectionPool(host='localhost', port=1234): Read timed out. (read timeout=120)
+[2025-11-23 13:44:14] [WARNING] LLM request failed (attempt 1): HTTPConnectionPool(host='localhost', port=1234): Read timed out. (read timeout=120)
+[2025-11-23 14:35:13] [INFO] Bağlantı aranıyor...
+[2025-11-23 14:37:54] [ERROR] Error processing SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf: (3221225786, 'ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41d9acbc0 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/tur.traineddatalstm-punc-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41d8d6de0 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/tur.traineddatalstm-word-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41a5a9e80 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/tur.traineddatalstm-number-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41b2f2fb0 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/eng.traineddatalstm-punc-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41b2f4f40 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/eng.traineddatalstm-word-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41d9ad3b0 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/eng.traineddatalstm-number-dawg)')
+[2025-11-23 14:37:59] [ERROR] File error: (3221225786, 'ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41d9acbc0 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/tur.traineddatalstm-punc-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41d8d6de0 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/tur.traineddatalstm-word-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41a5a9e80 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/tur.traineddatalstm-number-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41b2f2fb0 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/eng.traineddatalstm-punc-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41b2f4f40 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/eng.traineddatalstm-word-dawg) ObjectCache(00007ffdac4a4560)::~ObjectCache(): WARNING! LEAK! object 000001e41d9ad3b0 still has count 1 (id C:\\Program Files\\Tesseract-OCR/tessdata/eng.traineddatalstm-number-dawg)')
+[2025-11-23 14:46:27] [INFO] Bağlantı aranıyor...
+[2025-11-23 16:47:37] [INFO] Bağlantı aranıyor...
+[2025-11-23 16:48:22] [INFO] Tesseract yield low text (0 chars) for page 11. Trying EasyOCR...
+[2025-11-23 16:48:41] [INFO] EasyOCR success: 55 chars found.
+[2025-11-23 16:51:06] [WARNING] Contract name too long (535 chars). Truncating/Clearing.
+[2025-11-23 16:51:17] [ERROR] Job failed: name 'start_time' is not defined
+[2025-11-23 19:19:10] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:19:18] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:19:49] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:19:50] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:19:56] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:20:59] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:21:07] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:22:10] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:22:10] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:22:18] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:24:47] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:25:04] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:25:32] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:25:38] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:30:55] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:30:55] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:30:59] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:36:20] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:36:20] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:36:26] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:38:50] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:38:50] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:38:54] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:40:16] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:40:20] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:40:44] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:40:45] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:40:49] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:44:13] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:44:14] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:44:20] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:45:35] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:45:39] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:45:41] [INFO] Database initialized successfully
+[2025-11-23 19:45:55] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:45:59] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:46:01] [INFO] Database initialized successfully
+[2025-11-23 19:46:48] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:46:49] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:46:53] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:46:54] [INFO] Database initialized successfully
+[2025-11-23 19:50:48] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:50:48] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:50:53] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:50:54] [INFO] Database initialized successfully
+[2025-11-23 19:53:34] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:53:35] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:53:39] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:53:41] [INFO] Database initialized successfully
+[2025-11-23 19:53:57] [INFO] Celery task 758d9dcb-d1e0-4dbd-a136-25748a633ce8 dispatched for job 1
+[2025-11-23 19:53:57] [INFO] Celery task started for job 1
+[2025-11-23 19:53:59] [INFO] Bağlantı aranıyor...
+[2025-11-23 19:54:01] [INFO] Starting job 1: 4 files to process
+[2025-11-23 19:54:01] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 19:54:01] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 19:54:01] [ERROR] Error processing Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf: name 'get_db' is not defined
+[2025-11-23 19:54:01] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:54:01] [ERROR] Error processing Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf: name 'get_db' is not defined
+[2025-11-23 19:54:01] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:54:01] [ERROR] Error processing Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf: name 'get_db' is not defined
+[2025-11-23 19:54:01] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:54:01] [ERROR] Error processing SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf: name 'get_db' is not defined
+[2025-11-23 19:54:01] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:54:01] [INFO] Batch 1/1 completed in 0.1s (avg 0.0s/file)
+[2025-11-23 19:54:01] [INFO] Excel export completed: Veri yok
+[2025-11-23 19:54:01] [INFO] Job 1 completed successfully in 0.1s
+[2025-11-23 19:54:01] [INFO] Celery task completed successfully for job 1
+[2025-11-23 19:54:06] [INFO] Celery task 6f8e4e8e-1f01-461e-b381-8887fc81ba2c dispatched for job 2
+[2025-11-23 19:54:06] [INFO] Celery task started for job 2
+[2025-11-23 19:54:08] [INFO] Bağlantı aranıyor...
+[2025-11-23 19:54:10] [INFO] Starting job 2: 4 files to process
+[2025-11-23 19:54:10] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 19:54:10] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 19:54:10] [ERROR] Error processing Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf: name 'get_db' is not defined
+[2025-11-23 19:54:10] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:54:10] [ERROR] Error processing Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf: name 'get_db' is not defined
+[2025-11-23 19:54:10] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:54:10] [ERROR] Error processing Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf: name 'get_db' is not defined
+[2025-11-23 19:54:10] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:54:10] [ERROR] Error processing SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf: name 'get_db' is not defined
+[2025-11-23 19:54:10] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:54:10] [INFO] Batch 1/1 completed in 0.1s (avg 0.0s/file)
+[2025-11-23 19:54:10] [INFO] Excel export completed: Veri yok
+[2025-11-23 19:54:10] [INFO] Job 2 completed successfully in 0.1s
+[2025-11-23 19:54:10] [INFO] Celery task completed successfully for job 2
+[2025-11-23 19:55:00] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:55:00] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:55:04] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:55:06] [INFO] Database initialized successfully
+[2025-11-23 19:55:41] [INFO] Celery task ae392ce8-d811-4d0e-9815-3a8fdfaf4b55 dispatched for job 3
+[2025-11-23 19:55:41] [INFO] Celery task started for job 3
+[2025-11-23 19:55:43] [INFO] Bağlantı aranıyor...
+[2025-11-23 19:55:45] [INFO] Starting job 3: 4 files to process
+[2025-11-23 19:55:45] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 19:55:45] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 19:55:45] [ERROR] Error processing Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf: name 'get_db' is not defined
+[2025-11-23 19:55:45] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:55:45] [ERROR] Error processing Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf: name 'get_db' is not defined
+[2025-11-23 19:55:45] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:55:45] [ERROR] Error processing Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf: name 'get_db' is not defined
+[2025-11-23 19:55:45] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:55:45] [ERROR] Error processing SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf: name 'get_db' is not defined
+[2025-11-23 19:55:45] [ERROR] Error in batch processing: cannot access local variable 'db' where it is not associated with a value
+[2025-11-23 19:55:45] [INFO] Batch 1/1 completed in 0.0s (avg 0.0s/file)
+[2025-11-23 19:55:45] [INFO] Excel export completed: Veri yok
+[2025-11-23 19:55:45] [INFO] Job 3 completed successfully in 0.0s
+[2025-11-23 19:55:45] [INFO] Celery task completed successfully for job 3
+[2025-11-23 19:57:09] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:57:13] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:57:15] [INFO] Database initialized successfully
+[2025-11-23 19:57:32] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:57:33] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:57:37] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:57:39] [INFO] Database initialized successfully
+[2025-11-23 19:57:54] [INFO] Celery task 049dc8cf-1443-44d0-9174-8bfa16287f27 dispatched for job 4
+[2025-11-23 19:57:54] [INFO] Celery task started for job 4
+[2025-11-23 19:57:56] [INFO] Bağlantı aranıyor...
+[2025-11-23 19:57:58] [INFO] Starting job 4: 4 files to process
+[2025-11-23 19:57:58] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 19:57:58] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 19:57:58] [ERROR] Error processing Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 19:57:58] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 19:57:58] [ERROR] Error processing Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 19:57:58] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 19:57:58] [ERROR] Error processing Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 19:57:58] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 19:57:58] [ERROR] Error processing SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 19:57:58] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 19:57:58] [INFO] Batch 1/1 completed in 0.1s (avg 0.0s/file)
+[2025-11-23 19:57:58] [INFO] Excel export completed: Veri yok
+[2025-11-23 19:57:58] [INFO] Job 4 completed successfully in 0.1s
+[2025-11-23 19:57:58] [INFO] Celery task completed successfully for job 4
+[2025-11-23 19:59:04] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 19:59:08] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 19:59:09] [INFO] Database initialized successfully
+[2025-11-23 20:01:23] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:01:27] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 20:01:28] [INFO] Database initialized successfully
+[2025-11-23 20:03:20] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:03:20] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:03:25] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 20:03:26] [INFO] Database initialized successfully
+[2025-11-23 20:04:10] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:04:13] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 20:04:14] [INFO] Database initialized successfully
+[2025-11-23 20:04:23] [INFO] Celery task aebb580e-a303-48b5-a392-36d9d82dfc22 dispatched for job 5
+[2025-11-23 20:04:23] [INFO] Celery task started for job 5
+[2025-11-23 20:04:25] [INFO] Bağlantı aranıyor...
+[2025-11-23 20:04:27] [INFO] Starting job 5: 4 files to process
+[2025-11-23 20:04:27] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 20:04:27] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 20:04:27] [ERROR] Error processing Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:04:27] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:04:27] [ERROR] Error processing Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:04:27] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:04:27] [ERROR] Error processing Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:04:27] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:04:27] [ERROR] Error processing SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:04:27] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:04:27] [INFO] Batch 1/1 completed in 0.1s (avg 0.0s/file)
+[2025-11-23 20:04:27] [INFO] Excel export completed: Veri yok
+[2025-11-23 20:04:27] [INFO] Job 5 completed successfully in 0.1s
+[2025-11-23 20:04:27] [INFO] Celery task completed successfully for job 5
+[2025-11-23 20:05:33] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:05:33] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:05:37] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 20:05:39] [INFO] Database initialized successfully
+[2025-11-23 20:06:00] [INFO] Celery task ddad00ac-0276-4e7f-bb55-2e7d00446dae dispatched for job 6
+[2025-11-23 20:06:00] [INFO] Celery task started for job 6
+[2025-11-23 20:06:02] [INFO] Bağlantı aranıyor...
+[2025-11-23 20:06:04] [INFO] Starting job 6: 4 files to process
+[2025-11-23 20:06:04] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 20:06:04] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 20:06:04] [ERROR] Error processing Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:06:04] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:06:04] [ERROR] Error processing Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:06:04] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:06:04] [ERROR] Error processing Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:06:04] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:06:04] [ERROR] Error processing SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:06:04] [ERROR] File error: Unable to get page count. Is poppler installed and in PATH?
+[2025-11-23 20:06:04] [INFO] Batch 1/1 completed in 0.1s (avg 0.0s/file)
+[2025-11-23 20:06:04] [INFO] Excel export completed: Veri yok
+[2025-11-23 20:06:04] [INFO] Job 6 completed successfully in 0.1s
+[2025-11-23 20:06:04] [INFO] Celery task completed successfully for job 6
+[2025-11-23 20:08:12] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:08:13] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:08:17] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 20:08:19] [INFO] Database initialized successfully
+[2025-11-23 20:08:42] [INFO] Celery task d2524dd8-2678-4098-bd33-44b841472c71 dispatched for job 7
+[2025-11-23 20:08:42] [INFO] Celery task started for job 7
+[2025-11-23 20:08:44] [INFO] Bağlantı aranıyor...
+[2025-11-23 20:08:46] [INFO] Starting job 7: 4 files to process
+[2025-11-23 20:08:46] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 20:08:46] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 20:08:48] [INFO] Native text too short for Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf, performing OCR...
+[2025-11-23 20:08:50] [ERROR] OCR future error for page 0: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:08:50] [ERROR] OCR future error for page 1: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:08:50] [ERROR] OCR future error for page 2: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:08:50] [INFO] OCR cached: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 20:08:58] [INFO] Native text too short for Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf, performing OCR...
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 0: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 1: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 2: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 5: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 6: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 7: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 9: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 10: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [ERROR] OCR future error for page 11: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:03] [INFO] OCR cached: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 20:09:03] [INFO] LLM result cached
+[2025-11-23 20:09:04] [INFO] Native text too short for Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf, performing OCR...
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 0: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 1: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 2: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 7: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 8: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 9: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 13: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 14: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [ERROR] OCR future error for page 15: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:10] [INFO] OCR cached: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 20:09:14] [INFO] LLM result cached
+[2025-11-23 20:09:20] [INFO] Native text too short for SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf, performing OCR...
+[2025-11-23 20:09:24] [INFO] LLM result cached
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 0: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 1: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 2: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 12: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 13: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 14: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 24: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 25: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [ERROR] OCR future error for page 26: A process in the process pool was terminated abruptly while the future was running or pending.
+[2025-11-23 20:09:24] [INFO] OCR cached: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:09:24] [INFO] LLM cache HIT
+[2025-11-23 20:09:24] [INFO] Redis LLM cache HIT: SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:09:24] [INFO] Batch 1/1 completed in 38.0s (avg 9.5s/file)
+[2025-11-23 20:09:24] [INFO] Bulk saving 4 contracts to database...
+[2025-11-23 20:09:24] [INFO] Bulk save completed
+[2025-11-23 20:09:24] [INFO] Excel export completed: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Telenity_Rapor_20251123_2009.xlsx
+[2025-11-23 20:09:24] [INFO] Job 7 completed successfully in 38.2s
+[2025-11-23 20:09:24] [INFO] Celery task completed successfully for job 7
+[2025-11-23 20:13:13] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:13:14] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:13:18] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 20:13:19] [INFO] Database initialized successfully
+[2025-11-23 20:13:44] [INFO] Celery task ae2ca3f8-7503-45af-bb0b-551a7f7205a4 dispatched for job 1
+[2025-11-23 20:13:44] [INFO] Celery task started for job 1
+[2025-11-23 20:13:46] [INFO] Bağlantı aranıyor...
+[2025-11-23 20:13:48] [INFO] Starting job 1: 4 files to process
+[2025-11-23 20:13:48] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 20:13:48] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 20:13:48] [INFO] OCR cache HIT: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 20:13:48] [INFO] Redis OCR cache HIT: Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 20:13:48] [INFO] OCR cache HIT: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 20:13:48] [INFO] Redis OCR cache HIT: Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 20:13:48] [INFO] OCR cache HIT: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 20:13:48] [INFO] Redis OCR cache HIT: Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 20:13:48] [INFO] OCR cache HIT: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:13:48] [INFO] Redis OCR cache HIT: SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:13:50] [INFO] LLM cache HIT
+[2025-11-23 20:13:50] [INFO] Redis LLM cache HIT: Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 20:13:55] [INFO] LLM cache HIT
+[2025-11-23 20:13:55] [INFO] Redis LLM cache HIT: Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 20:13:59] [INFO] LLM cache HIT
+[2025-11-23 20:13:59] [INFO] Redis LLM cache HIT: Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 20:14:07] [INFO] LLM cache HIT
+[2025-11-23 20:14:07] [INFO] Redis LLM cache HIT: SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:14:07] [INFO] Batch 1/1 completed in 18.9s (avg 4.7s/file)
+[2025-11-23 20:14:07] [INFO] Bulk saving 4 contracts to database...
+[2025-11-23 20:14:07] [INFO] Bulk save completed
+[2025-11-23 20:14:07] [INFO] Excel export completed: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Telenity_Rapor_20251123_2014.xlsx
+[2025-11-23 20:14:08] [INFO] Job 1 completed successfully in 19.1s
+[2025-11-23 20:14:08] [INFO] Celery task completed successfully for job 1
+[2025-11-23 20:20:41] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:20:42] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:20:46] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 20:20:47] [INFO] Database initialized successfully
+[2025-11-23 20:21:09] [INFO] Celery task 58807b1b-4f5a-47c8-a6de-3aa6f69c95e4 dispatched for job 1
+[2025-11-23 20:21:09] [INFO] Celery task started for job 1
+[2025-11-23 20:21:11] [INFO] Bağlantı aranıyor...
+[2025-11-23 20:21:13] [INFO] Starting job 1: 4 files to process
+[2025-11-23 20:21:13] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 20:21:13] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 20:21:13] [INFO] OCR cache HIT: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 20:21:13] [INFO] Redis OCR cache HIT: Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 20:21:13] [INFO] OCR cache HIT: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 20:21:13] [INFO] Redis OCR cache HIT: Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 20:21:13] [INFO] OCR cache HIT: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 20:21:13] [INFO] Redis OCR cache HIT: Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 20:21:13] [INFO] OCR cache HIT: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:21:13] [INFO] Redis OCR cache HIT: SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:21:15] [INFO] LLM cache HIT
+[2025-11-23 20:21:15] [INFO] Redis LLM cache HIT: Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 20:21:20] [INFO] LLM cache HIT
+[2025-11-23 20:21:20] [INFO] Redis LLM cache HIT: Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 20:21:23] [INFO] LLM cache HIT
+[2025-11-23 20:21:23] [INFO] Redis LLM cache HIT: Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 20:21:31] [INFO] LLM cache HIT
+[2025-11-23 20:21:31] [INFO] Redis LLM cache HIT: SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:21:31] [INFO] Batch 1/1 completed in 18.2s (avg 4.5s/file)
+[2025-11-23 20:21:31] [INFO] Bulk saving 4 contracts to database...
+[2025-11-23 20:21:31] [INFO] Bulk save completed
+[2025-11-23 20:21:32] [INFO] Excel export completed: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Telenity_Rapor_20251123_2021.xlsx
+[2025-11-23 20:21:32] [INFO] Job 1 completed successfully in 18.4s
+[2025-11-23 20:21:32] [INFO] Celery task completed successfully for job 1
+[2025-11-23 20:48:42] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:48:42] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 20:48:50] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 20:48:52] [INFO] Database initialized successfully
+[2025-11-23 20:49:00] [INFO] Celery task 88365a5e-3ba8-49ef-ab59-d27e5525806d dispatched for job 2
+[2025-11-23 20:49:01] [INFO] Celery task started for job 2
+[2025-11-23 20:49:02] [INFO] Bağlantı aranıyor...
+[2025-11-23 20:49:04] [INFO] Starting job 2: 4 files to process
+[2025-11-23 20:49:04] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 20:49:04] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 20:49:05] [INFO] DB Cache HIT: Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 20:49:05] [INFO] DB Cache HIT: Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 20:49:05] [INFO] DB Cache HIT: Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 20:49:05] [INFO] DB Cache HIT: SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 20:49:05] [INFO] Batch 1/1 completed in 0.1s (avg 0.0s/file)
+[2025-11-23 20:49:05] [INFO] Bulk saving 4 contracts to database...
+[2025-11-23 20:49:05] [INFO] Bulk save completed
+[2025-11-23 20:49:05] [INFO] Excel export completed: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Telenity_Rapor_20251123_2049.xlsx
+[2025-11-23 20:49:05] [INFO] Job 2 completed successfully in 0.3s
+[2025-11-23 20:49:05] [INFO] Celery task completed successfully for job 2
+[2025-11-23 21:10:37] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 21:10:37] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 21:10:47] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 21:10:49] [INFO] Database initialized successfully
+[2025-11-23 21:10:55] [INFO] Celery task d7527018-bac5-4d64-9fb6-674e912431e0 dispatched for job 3
+[2025-11-23 21:10:55] [INFO] Celery task started for job 3
+[2025-11-23 21:10:57] [INFO] Bağlantı aranıyor...
+[2025-11-23 21:10:59] [INFO] LM Studio connected: Model: qwen/qwen2.5-vl-7b
+[2025-11-23 21:10:59] [INFO] Starting job 3: 4 files to process
+[2025-11-23 21:10:59] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 21:10:59] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 21:10:59] [INFO] DB Cache HIT: Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf
+[2025-11-23 21:10:59] [INFO] DB Cache HIT: Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf
+[2025-11-23 21:10:59] [INFO] DB Cache HIT: Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf
+[2025-11-23 21:10:59] [INFO] DB Cache HIT: SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf
+[2025-11-23 21:10:59] [INFO] Batch 1/1 completed in 0.1s (avg 0.0s/file)
+[2025-11-23 21:10:59] [INFO] Bulk saving 4 contracts to database...
+[2025-11-23 21:10:59] [INFO] Bulk save completed
+[2025-11-23 21:11:00] [INFO] Excel export completed: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Telenity_Rapor_20251123_2110.xlsx
+[2025-11-23 21:11:00] [INFO] Job 3 completed successfully in 0.4s
+[2025-11-23 21:11:00] [INFO] Celery task completed successfully for job 3
+[2025-11-23 21:12:44] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 21:12:45] [INFO] Redis cache initialized: redis://localhost:6379/0
+[2025-11-23 21:12:48] [INFO] Sentry DSN not configured, error tracking disabled
+[2025-11-23 21:12:50] [INFO] Database initialized successfully
+[2025-11-23 21:12:59] [INFO] Celery task 7549f177-a045-48ed-8878-3039bd32ce0b dispatched for job 1
+[2025-11-23 21:12:59] [INFO] Celery task started for job 1
+[2025-11-23 21:13:01] [INFO] Bağlantı aranıyor...
+[2025-11-23 21:13:03] [INFO] LM Studio connected: Model: qwen/qwen2.5-vl-7b
+[2025-11-23 21:13:03] [INFO] Starting job 1: 4 files to process
+[2025-11-23 21:13:03] [INFO] Processing 4 files in 1 batches (batch size: 20, workers: 4)
+[2025-11-23 21:13:03] [INFO] Starting batch 1/1 with 4 files
+[2025-11-23 21:13:05] [INFO] Native text too short for Sam Media Limited_2025,February24_Mutual Confidentiality Agreement  Telenity FZE signed.pdf, performing OCR...
+[2025-11-23 21:13:12] [INFO] Native text too short for Protim İletişim_2013,April10_Servis ve Bakım Sözleşmesi.pdf, performing OCR...
+[2025-11-23 21:13:20] [INFO] Native text too short for Rubycom Holdings_2022,February10_Teamin Agreement_NonExclusive clean copy_signed.pdf, performing OCR...
+[2025-11-23 21:13:40] [INFO] Native text too short for SAM Media Limited_2025,August11_Service Partner Agreement_ Telenity FZE.pdf, performing OCR...
+[2025-11-23 21:13:42] [INFO] OCR cached
+[2025-11-23 21:13:47] [INFO] Vision request failed, retrying without images
+[2025-11-23 21:14:00] [INFO] Tesseract low text for page 11, trying EasyOCR...
+[2025-11-23 21:14:21] [INFO] EasyOCR success: 55 chars
+[2025-11-23 21:14:21] [INFO] OCR cached
+[2025-11-23 21:14:24] [INFO] Vision request failed, retrying without images
+[2025-11-23 21:14:27] [INFO] OCR cached
+[2025-11-23 21:14:27] [INFO] OCR cached
+[2025-11-23 21:14:43] [INFO] Vision request failed, retrying without images
+[2025-11-23 21:14:43] [INFO] Vision request failed, retrying without images
+[2025-11-23 21:14:56] [INFO] LLM result cached
+[2025-11-23 21:15:06] [INFO] LLM result cached
+[2025-11-23 21:15:16] [INFO] LLM result cached
+[2025-11-23 21:15:16] [INFO] Batch 1/1 completed in 133.4s (avg 33.3s/file)
+[2025-11-23 21:15:16] [INFO] Bulk saving 4 contracts to database...
+[2025-11-23 21:15:16] [INFO] Bulk save completed
+[2025-11-23 21:15:17] [INFO] Excel export completed: C:\Users\dagha\Downloads\Sozlesmelerdeneme1\Telenity_Rapor_20251123_2115.xlsx
+[2025-11-23 21:15:17] [INFO] Job 1 completed successfully in 133.6s
+[2025-11-23 21:15:17] [INFO] Celery task completed successfully for job 1

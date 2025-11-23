@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # Redis - Message Broker & Result Backend
+  redis:
+    image: redis:7-alpine
+    container_name: contractsai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - contractsai-network
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: contractsai-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=sqlite:///src_python/contracts_ai.db
+      - LM_STUDIO_IP=${LM_STUDIO_IP:-http://host.docker.internal:1234}
+      - API_KEY=${API_KEY:-change-me-in-production}
+      - MAX_WORKERS=${MAX_WORKERS:-4}
+      - USE_VISION_MODEL=${USE_VISION_MODEL:-false}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./src_python/contracts_ai.db:/app/src_python/contracts_ai.db
+      - ./exports:/app/exports
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - contractsai-network
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: contractsai-celery-worker
+    command: celery -A src_python.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=sqlite:///src_python/contracts_ai.db
+      - LM_STUDIO_IP=${LM_STUDIO_IP:-http://host.docker.internal:1234}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - MAX_WORKERS=${MAX_WORKERS:-4}
+    volumes:
+      - ./src_python/contracts_ai.db:/app/src_python/contracts_ai.db
+      - ./exports:/app/exports
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - backend
+    restart: unless-stopped
+    networks:
+      - contractsai-network
+
+  # Flower - Celery Monitoring
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: contractsai-flower
+    command: celery -A src_python.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery-worker
+    restart: unless-stopped
+    networks:
+      - contractsai-network
+
+networks:
+  contractsai-network:
+    driver: bridge
+
+volumes:
+  db-data:
+  exports-data:
+  logs-data:
+  redis-data:
+
+
