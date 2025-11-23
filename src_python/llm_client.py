@@ -28,57 +28,52 @@ class LLMClient:
                 continue
         return False, "LM Studio bulunamadı."
 
-    def get_analysis(self, text, filename=None, images=None, filename_date=None):
+   def get_analysis(self, text, filename=None, images=None, filename_date=None):
         if not self.is_connected:
             return {}
 
-        # Gelişmiş Prompt
-        system_prompt = """You are a legal contract analysis AI. Extract data into specific JSON fields.
-Required JSON Output format:
-{
-  "contract_name": "String (Title only, remove dates/addresses)",
-  "doc_type": "String (One of: %s)",
-  "company_type": "String (One of: %s)",
-  "signing_party": "String (Name of the counterparty/customer)",
-  "country": "String (Country of the signing party)",
-  "address": "String (Full address of the signing party. Look at the END of the document carefully)",
-  "signed_date": "YYYY-MM-DD",
-  "text_signature_status": "String (Fully Signed|Telenity Signed|Counterparty Signed)",
-  "found_telenity_name": "String (Exact Telenity entity name found)"
-}
+        # 1. System Prompt
+        system_prompt = """Extract contract data as JSON. Use ONLY these options:
+doc_type: {doc_types}
+company_type: {company_types}
+text_signature_status: Fully Signed|Telenity Signed|Counterparty Signed
 
-Instructions:
-1. Address is often found on the last page under 'Addresses' or 'Notices'.
-2. Do NOT extract Telenity's address (Maslak, Monroe, Dubai, Noida).
-3. If filename date is provided, prioritize it for 'signed_date'.
-4. Fix OCR typos (e.g., 'lstanbul' -> 'İstanbul').
-""" % (", ".join(DOC_TYPE_CHOICES), ", ".join(COMPANY_CHOICES))
+Required fields:
+- contract_name: title only (no address/date)
+- signing_party: non-Telenity party name
+- country: signing party country
+- address: signing party FULL address (check entire doc - start, signature block, parties section). NOT Telenity addresses (Maslak, Monroe, Dubai)
+- signed_date: YYYY-MM-DD (use filename date if provided, else from doc)
+- found_telenity_name: exact Telenity entity name in doc (e.g. "Telenity FZE", "Telenity İletişim Sistemleri...")
 
-        # SMART CONTEXT HANDLING:
-        # Qwen 2.5 handles large context, but let's be safe.
-        # Instead of just text[:4000], we send start + end if it's too long.
-        max_chars = 32000 # Qwen 7B easily handles 32k context
+Rules: Fix OCR errors (lstanbul→İstanbul). No placeholders (<InsertDate>). Prioritize filename date. Find address carefully (often after "Adres:", "Address:", "Mukim:")."""
+
+        # 2. Context Optimization (Metin çok uzunsa başını ve sonunu birleştir)
+        # İmzalar ve adresler genelde en sonda olduğu için sadece ilk 4000 karakteri almak yanlıştır.
+        max_chars = 12000 
         if len(text) > max_chars:
             half = max_chars // 2
             processed_text = text[:half] + "\n...[SECTION OMITTED]...\n" + text[-half:]
         else:
             processed_text = text
 
-        date_hint = f"\nFILENAME DATE: {filename_date}" if filename_date else ""
-        user_prompt = f"FILE NAME: {filename or 'Unknown'}{date_hint}\n\nDOCUMENT CONTENT:\n{processed_text}"
+        date_hint = f"\nFILE DATE: {filename_date}" if filename_date else ""
+        user_prompt = f"""FILE: {filename or 'Unknown'}{date_hint}
+TEXT: {processed_text}
+
+Output JSON:
+{{"contract_name":"","doc_type":"","text_signature_status":"","company_type":"","signing_party":"","country":"","address":"","signed_date":"","found_telenity_name":""}}"""
+        
+        system_prompt = system_prompt.format(
+            doc_types=", ".join(DOC_TYPE_CHOICES),
+            company_types=", ".join(COMPANY_CHOICES),
+        )
 
         user_content = [{"type": "text", "text": user_prompt}]
         
-        # Vision handling
+        # Vision Image Handling
         if images:
-            # Qwen VL can handle multiple images, but let's limit to first page and last page for efficiency
-            # if there are many images.
-            target_images = images
-            if len(images) > 4:
-                # First 2 pages (header/intro) + Last 2 pages (signatures)
-                target_images = images[:2] + images[-2:]
-            
-            for img_b64 in target_images:
+            for img_b64 in images:
                 user_content.append({
                     "type": "image_url",
                     "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
@@ -90,31 +85,41 @@ Instructions:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
             ],
-            "temperature": 0.1, # Keep low for precision
-            "max_tokens": 1024,
+            "temperature": 0.1,
+            "stream": False,
         }
 
         last_error = None
-        for attempt in range(2):
+        
+        # 3. Request & Retry Mechanism (Geliştirilmiş Hata Yönetimi)
+        for attempt in range(2): # 2 deneme yeterli
             try:
-                # Timeout increased for larger context
-                resp = requests.post(self.api_url, json=payload, timeout=180)
+                # Timeout süresini 120 saniyeye çıkardık
+                resp = requests.post(self.api_url, json=payload, timeout=120)
+                
                 if resp.status_code == 200:
                     content = resp.json()["choices"][0]["message"]["content"]
-                    # Clean markdown code blocks if present
+                    # Markdown code block temizliği
                     content = content.replace("```json", "").replace("```", "").strip()
                     match = re.search(r"\{.*\}", content, re.DOTALL)
                     if match:
                         return json.loads(match.group(0))
-                last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                
+                # Başarılı değilse hatayı kaydet (örn: HTTP 400 - Context Limit Exceeded)
+                last_error = f"HTTP {resp.status_code}: {resp.text[:500]}"
+                logger.warning(f"LLM attempt {attempt+1} failed: {last_error}")
+                
             except Exception as e:
                 last_error = str(e)
-                logger.warning(f"LLM attempt {attempt+1} failed: {e}")
+                logger.warning(f"LLM attempt {attempt+1} exception: {e}")
                 time.sleep(1)
 
-        # Vision Fallback: If vision request fails, retry with text only
+        # 4. Vision Fallback (Hata alırsa Metin Moduna geç)
         if images:
-            logger.info("Vision request failed, retrying with TEXT ONLY mode...")
+            # Hatayı loga açıkça yazıyoruz ki neden başarısız olduğunu görelim
+            logger.error(f"Vision request FAILED. Reason: {last_error}")
+            logger.info("Retrying with TEXT ONLY mode...")
+            # Resimsiz olarak kendini tekrar çağırır
             return self.get_analysis(text, filename=filename, images=None, filename_date=filename_date)
 
         return {}
