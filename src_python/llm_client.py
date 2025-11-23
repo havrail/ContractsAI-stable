@@ -32,23 +32,30 @@ class LLMClient:
         if not self.is_connected:
             return {}
 
-        # 1. System Prompt (Tek parça string halinde düzeltildi)
-        system_prompt = """Extract contract data as JSON. 
-WARNING: Be precise. Do NOT hallucinate.
+        # src_python/llm_client.py içindeki system_prompt:
 
-Field Rules:
-1. doc_type: Must be exactly one of: {doc_types}. If unsure, pick closest.
-2. company_type: Must be exactly one of: {company_types}.
-3. contract_name: extract the specific TITLE of the agreement. 
-   - Good: "Master Services Agreement", "Non-Disclosure Agreement for Project X"
-   - Bad: "Agreement", "Contract", "Page 1". 
-   - Do NOT include dates or addresses in the title.
-4. address: Find the full address of the Counterparty (NOT Telenity). 
-   - Look at the VERY END of the document (signature block).
-   - Look for 'Registered Office', 'Principal Place of Business'.
-5. country: Extract the country from the address found above.
-6. signed_date: Look for handwritten dates in signature blocks or "Effective Date". Format: YYYY-MM-DD.
-7. found_telenity_name: Find exact Telenity entity name in doc (e.g. "Telenity FZE").
+        system_prompt = """Extract contract data as JSON. 
+WARNING: Strict Rules Apply.
+
+1. signing_party: The name of the Counterparty ONLY. 
+   - STRICTLY EXCLUDE "Telenity", "Telenity FZE", "Telenity Inc".
+   - If text says "Between Telenity and Google", output ONLY "Google".
+   - Do NOT output "Telenity and Google".
+
+2. address: The FULL address of the Counterparty ONLY.
+   - If you see Telenity's address (Maslak, Istanbul, Dubai, Monroe, Noida), IGNORE IT.
+   - Look for the address under the Counterparty's signature or specific 'Notices' section.
+   - If two addresses are present (Telenity & Partner), output ONLY the Partner's address.
+
+3. country: The country of the Counterparty (derived from the address above). 
+   - NOT Turkey (unless counterparty is Turkish). 
+   - NOT UAE (unless counterparty is from UAE).
+
+4. contract_name: Specific Title (e.g. "Service Agreement"). No dates.
+5. signed_date: YYYY-MM-DD. Look for handwritten dates in signature block.
+6. doc_type: Pick one: {doc_types}
+7. company_type: Pick one: {company_types}
+8. found_telenity_name: Exact Telenity entity name found in doc.
 
 Output JSON:
 {{
