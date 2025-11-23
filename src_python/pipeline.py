@@ -290,11 +290,28 @@ class PipelineManager:
 
     def _map_signature_smart(self, text_sig, visual_count):
         sig = str(text_sig).lower()
+        
+        # 1. Kural: Görsel olarak 2 veya daha fazla sayfa imzalıysa -> KESİN Fully Signed
         if visual_count >= 2: return "Fully Signed"
+        
+        # 2. Kural: Metin analizinde "fully" veya "both" geçiyorsa -> Fully Signed
         if "fully" in sig or "both" in sig: return "Fully Signed"
-        if "counter" in sig or "partner" in sig or "customer" in sig: return "Counterparty Signed"
+        
+        # 3. Kural: Metin "Sadece Counterparty" diyorsa -> Counterparty Signed
+        # (Ancak görsel desteklemiyorsa buraya dikkat etmek lazım, şimdilik güvenelim)
+        if "counter" in sig or "customer" in sig: return "Counterparty Signed"
+        
+        # 4. Kural (KRİTİK DEĞİŞİKLİK): Görsel olarak 1 imza sayfası var
+        # Eski kod burada "Counterparty" diyordu. Yanlıştı.
+        # Eğer en az bir imza sayfası varsa ve metin aksini iddia etmiyorsa,
+        # bunun "Fully Signed" olma ihtimali "Counterparty"den yüksektir.
+        if visual_count == 1:
+            return "Fully Signed" 
+            
+        # 5. Kural: Metin Telenity diyorsa
         if "telenity" in sig: return "Telenity Signed"
-        if visual_count == 1: return "Counterparty Signed"
+        
+        # Hiçbir veri yoksa varsayılan
         return "Telenity Signed"
 
     def run_job(self, job_id: int, folder_path: str):
