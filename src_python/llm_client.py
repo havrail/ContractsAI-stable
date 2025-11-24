@@ -1,3 +1,4 @@
+# src_python/llm_client.py
 import requests
 import json
 import time
@@ -29,8 +30,7 @@ class LLMClient:
         return False, "LM Studio bulunamadı."
 
     def get_analysis(self, text, filename=None, images=None, filename_date=None):
-        if not self.is_connected:
-            return {}
+        if not self.is_connected: return {}
 
         system_prompt = """Extract contract data as JSON. 
 WARNING: Be precise. Do NOT hallucinate.
@@ -63,7 +63,6 @@ Output JSON:
   "confidence_score": 0
 }}
 """
-
         max_chars = 12000 
         if len(text) > max_chars:
             half = max_chars // 2
@@ -103,22 +102,16 @@ Output JSON:
         }
 
         last_error = None
-        
         for attempt in range(2): 
             try:
-                # Timeout 300sn (5dk) yapıldı
                 resp = requests.post(self.api_url, json=payload, timeout=300)
-                
                 if resp.status_code == 200:
                     content = resp.json()["choices"][0]["message"]["content"]
                     content = content.replace("```json", "").replace("```", "").strip()
                     match = re.search(r"\{.*\}", content, re.DOTALL)
-                    if match:
-                        return json.loads(match.group(0))
-                
+                    if match: return json.loads(match.group(0))
                 last_error = f"HTTP {resp.status_code}: {resp.text[:500]}"
                 logger.warning(f"LLM attempt {attempt+1} failed: {last_error}")
-                
             except Exception as e:
                 last_error = str(e)
                 logger.warning(f"LLM attempt {attempt+1} exception: {e}")
@@ -131,24 +124,71 @@ Output JSON:
 
         return {}
 
+    # --- YENİ EKLENEN: AI DENETÇİ (VERIFIER) ---
+    def verify_extraction(self, current_data, text, filename):
+        """
+        Çıkarılan veriyi ham metinle kıyaslayıp tutarsızlıkları düzeltir.
+        Sadece metin tabanlı çalıştığı için çok hızlıdır.
+        """
+        if not self.is_connected: return current_data
+
+        # Context Optimization
+        max_chars = 6000 # Denetim için daha az metin yeterli
+        if len(text) > max_chars:
+            half = max_chars // 2
+            processed_text = text[:half] + "\n...[END]...\n" + text[-half:]
+        else:
+            processed_text = text
+
+        prompt = f"""You are a strict Quality Assurance Auditor.
+Your job is to verify the extracted data against the source text and filename.
+
+SOURCE FILENAME: {filename}
+SOURCE TEXT (Snippet):
+{processed_text}
+
+CURRENT EXTRACTED DATA:
+{json.dumps(current_data, indent=2)}
+
+INSTRUCTIONS:
+1. Check 'signing_party': Is it consistent with the filename? (Filename is usually more accurate).
+2. Check 'country': Does the 'address' actually belong to this country? (e.g. Tallinn is in Estonia, not Turkey).
+3. Check 'signed_date': Is the filename date more accurate?
+4. Check 'address': Is it a Telenity address (Maslak/Dubai)? If so, clear it.
+
+OUTPUT:
+Return the CORRECTED JSON object. If no changes needed, return the same JSON.
+"""
+        
+        payload = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "stream": False,
+        }
+
+        try:
+            start_t = time.time()
+            resp = requests.post(self.api_url, json=payload, timeout=60)
+            if resp.status_code == 200:
+                content = resp.json()["choices"][0]["message"]["content"]
+                content = content.replace("```json", "").replace("```", "").strip()
+                match = re.search(r"\{.*\}", content, re.DOTALL)
+                if match:
+                    logger.info(f"🤖 AI Verification completed in {time.time()-start_t:.1f}s")
+                    return json.loads(match.group(0))
+        except Exception as e:
+            logger.warning(f"AI Verification failed: {e}")
+        
+        return current_data # Hata olursa eski veriyi döndür
+
     def detect_telenity_visual(self, image_b64):
-        if not self.is_connected:
-            return None
-            
+        if not self.is_connected: return None
         prompt = "Look at this document. Identify Telenity Company Name. Return ONLY the name."
         payload = {
             "model": self.model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
-                    ]
-                }
-            ],
-            "temperature": 0.1,
-            "stream": False,
+            "messages": [{"role": "user", "content": [{"type": "text", "text": prompt},{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}]}],
+            "temperature": 0.1, "stream": False
         }
         try:
             resp = requests.post(self.api_url, json=payload, timeout=60)
@@ -158,6 +198,5 @@ Output JSON:
                 elif "Inc" in content or "Monroe" in content: return "TU - Telenity USA", "Telenity Inc"
                 elif "İletişim" in content or "Turkey" in content: return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş."
                 elif "India" in content: return "TI - Telenity India", "Telenity Systems Software India Private Limited"
-        except Exception as e:
-            logger.error(f"Vision detection failed: {e}")
+        except Exception as e: logger.error(f"Vision detection failed: {e}")
         return None
