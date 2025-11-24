@@ -49,8 +49,8 @@ pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 TESSERACT_CONFIG = "--oem 1 --psm 6"
 
 # DPI Ayarları
-SCAN_DPI = 100  # İmza aramak için hızlı tarama kalitesi
-FINAL_DPI = 200 # LLM'e gidecek okunaklı kalite
+SCAN_DPI = 100  
+FINAL_DPI = 200 
 
 class PipelineManager:
     def __init__(self, log_callback: Optional[Callable[[str], None]] = None):
@@ -83,6 +83,7 @@ class PipelineManager:
         key_pages.add(0) 
 
         try:
+            # Metin bazlı sayfa tespiti (Hata alırsa sessizce geçer)
             try:
                 reader = PdfReader(full_path)
                 keywords = ["notices", "tebligat", "adres:", "address:", "registered office"]
@@ -91,7 +92,8 @@ class PipelineManager:
                     if any(kw in txt for kw in keywords):
                         if "address" in txt and ("street" in txt or "no:" in txt): key_pages.add(i)
                         elif "tebligat" in txt and ("adres" in txt or "no:" in txt): key_pages.add(i)
-            except: pass
+            except: 
+                pass # PDF bozuksa veya okunamıyorsa sorun yok, görsel taramaya geç
 
             logger.info(f"Scanning {num_pages} pages at {SCAN_DPI} DPI for signatures...")
             low_res_images = convert_from_path(full_path, dpi=SCAN_DPI, poppler_path=POPPLER_PATH)
@@ -101,7 +103,7 @@ class PipelineManager:
                     key_pages.add(i)
             if len(key_pages) == 1: key_pages.add(num_pages - 1)
         except Exception as e:
-            logger.error(f"Scan signature error: {e}.")
+            logger.error(f"Scan signature error: {e}. Falling back to First/Last.")
             if num_pages > 1: key_pages.add(num_pages - 1)
 
         sorted_pages = sorted(list(key_pages))
@@ -125,6 +127,9 @@ class PipelineManager:
 
     def _clean_signing_party(self, party_name):
         if not party_name: return ""
+        # Ensure string
+        party_name = str(party_name)
+        
         if party_name.lower().strip().replace(" ", "") in ["telenity", "telenityfze", "telenityinc"]: return ""
         if " and " in party_name.lower():
             parts = re.split(r' and | & ', party_name, flags=re.IGNORECASE)
@@ -135,6 +140,7 @@ class PipelineManager:
 
     def _clean_contract_name(self, name):
         if not name: return "Belirtilmemiş"
+        name = str(name) # Ensure string
         name = name.replace("<InsertDate>", "").strip()
         if len(name) > 100: name = name[:100]
         if any(x in name.lower() for x in ["agreement is made", "hereinafter", "entered into"]): return ""
@@ -158,7 +164,13 @@ class PipelineManager:
         if "telenity" in sig: return "Telenity Signed"
         return "Telenity Signed"
 
-    # GÜNCELLENDİ: Job Root parametresi eklendi
+    # LLM Verisi Temizleme Yardımcısı (HATA 1 ÇÖZÜMÜ)
+    def _safe_str(self, data):
+        """Verilen veriyi güvenli bir şekilde stringe çevirir. Dict/List gelirse bozar."""
+        if data is None: return ""
+        if isinstance(data, (dict, list)): return "" # Hatalı veri tiplerini yut
+        return str(data).strip()
+
     def process_single_file(self, filename: str, folder_path: str, job_root: str = None) -> Dict[str, Any]:
         full_path = os.path.join(folder_path, filename)
         db = None
@@ -183,32 +195,39 @@ class PipelineManager:
                 db.close()
                 return result
 
-            # --- KLASÖR İSMİNDEN ŞİRKET BULMA (YENİ ÖZELLİK) ---
             folder_company_name = ""
             if job_root:
                 abs_folder = os.path.abspath(folder_path)
                 abs_root = os.path.abspath(job_root)
-                
-                # Eğer dosya bir alt klasördeyse (Ana klasörde değilse)
                 if abs_folder != abs_root and abs_folder.startswith(abs_root):
-                    # Ana klasöre göre göreceli yolu al (Örn: "Vodafone/2023")
                     rel_path = os.path.relpath(abs_folder, abs_root)
-                    # İlk parça şirket ismidir (Örn: "Vodafone")
                     top_subfolder = rel_path.split(os.sep)[0]
                     if top_subfolder and top_subfolder != ".":
                         folder_company_name = top_subfolder
                         logger.info(f"📁 Folder-based Company Detected: '{folder_company_name}'")
-            # ----------------------------------------------------
 
             text = ""
             is_scanned = False
-            reader = PdfReader(full_path)
-            num_pages = len(reader.pages)
+            num_pages = 0
+            
+            # HATA 2 ÇÖZÜMÜ: PDF okuma hatası olursa (Corrupt PDF) Scanned moduna geç
             try:
+                reader = PdfReader(full_path)
+                num_pages = len(reader.pages)
                 for page in reader.pages:
                     txt = page.extract_text()
                     if txt: text += txt + "\n"
-            except Exception as e: logger.warning(f"Native read failed: {e}")
+            except Exception as e:
+                logger.warning(f"Native read failed (Corrupt PDF?): {e}. Switching to OCR mode.")
+                is_scanned = True # Zorla Taranmış moduna al
+                
+                # Sayfa sayısını poppler ile bulmaya çalış (Yedek plan)
+                try:
+                    from pdf2image import pdfinfo_from_path
+                    info = pdfinfo_from_path(full_path, poppler_path=POPPLER_PATH)
+                    num_pages = info["Pages"]
+                except:
+                    num_pages = 1 # En kötü ihtimal
 
             if not text or len(text.strip()) < 100:
                 is_scanned = True
@@ -217,11 +236,12 @@ class PipelineManager:
             target_page_indices = self.identify_key_pages(full_path, num_pages)
             llm_images = self.get_optimized_images_for_llm(full_path, target_page_indices)
 
-            if is_scanned and not text.strip() and llm_images:
-                logger.info("Running Partial OCR on key pages...")
-                for img in llm_images:
-                    processed = ImageProcessor.preprocess_image(img)
-                    text += pytesseract.image_to_string(processed, lang="tur+eng", config=TESSERACT_CONFIG) + "\n"
+            if is_scanned and llm_images: # Text boş olsa bile image varsa dene
+                if not text.strip():
+                    logger.info("Running Partial OCR on key pages...")
+                    for img in llm_images:
+                        processed = ImageProcessor.preprocess_image(img)
+                        text += pytesseract.image_to_string(processed, lang="tur+eng", config=TESSERACT_CONFIG) + "\n"
 
             filename_date = extract_date_from_filename(filename)
             vision_images_b64 = []
@@ -230,41 +250,41 @@ class PipelineManager:
 
             llm_data = self.llm_client.get_analysis(text, filename, vision_images_b64, filename_date)
 
-            telenity_search_text = (llm_data.get("found_telenity_name", "") or "") + " " + text[:2000]
+            telenity_search_text = (self._safe_str(llm_data.get("found_telenity_name", "")) or "") + " " + text[:2000]
             telenity_code, telenity_full = determine_telenity_entity(telenity_search_text)
+            
             if USE_VISION_MODEL and (not telenity_code or telenity_code == "Bilinmiyor") and vision_images_b64:
                 vision_res = self.llm_client.detect_telenity_visual(vision_images_b64[0])
                 if vision_res: telenity_code, telenity_full = vision_res
 
-            contract_name = self._clean_contract_name(llm_data.get("contract_name", ""))
+            contract_name = self._clean_contract_name(self._safe_str(llm_data.get("contract_name", "")))
             
-            # --- PARTY BELİRLEME ÖNCELİKLERİ (YENİ) ---
+            raw_party = self._safe_str(llm_data.get("signing_party", ""))
             final_party = ""
-            confidence = int(llm_data.get("confidence_score", 0))
+            confidence = 0
+            try:
+                confidence = int(llm_data.get("confidence_score", 0))
+            except: confidence = 0
 
-            # 1. Öncelik: Klasör İsmi (En Güvenilir)
             if folder_company_name:
                 final_party = self._clean_signing_party(folder_company_name)
-                confidence = 100 # Klasörden geldiyse %100 eminiz
+                confidence = 100 
                 logger.info(f"Using Folder Name as Party: '{final_party}'")
             else:
-                # 2. Öncelik: LLM
-                raw_party = llm_data.get("signing_party", "")
                 final_party = self._clean_signing_party(raw_party)
-                
-                # 3. Öncelik: Dosya İsmi (Kurtarma)
                 if not final_party:
                     filename_company = extract_company_from_filename(filename)
                     if filename_company:
                         logger.info(f"Recovered party from filename: '{filename_company}'")
                         final_party = filename_company
-            # ------------------------------------------
 
-            address = filter_telenity_address(clean_turkish_chars(llm_data.get("address", "")))
-            raw_country = llm_data.get("country", "")
+            # HATA 1 ÇÖZÜMÜ: _safe_str kullanımı
+            raw_address = self._safe_str(llm_data.get("address", ""))
+            address = filter_telenity_address(clean_turkish_chars(raw_address))
+            
+            raw_country = self._safe_str(llm_data.get("country", ""))
             final_country = normalize_country(raw_country)
             
-            # --- FUZZY MATCHING & AUTO-LEARN ---
             import json
             kb_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "known_companies.json")
             known_db = {}
@@ -290,10 +310,9 @@ class PipelineManager:
                         with open(kb_path, "w", encoding="utf-8") as f: json.dump(known_db, f, indent=4, ensure_ascii=False)
                         logger.info(f"🧠 Learned: '{final_party}'")
                     except Exception as e: logger.warning(f"Could not update memory: {e}")
-            # -----------------------------------
 
             visual_sig_count = len([p for p in target_page_indices if p != 0])
-            final_sig = self._map_signature_smart(llm_data.get("text_signature_status", ""), visual_sig_count)
+            final_sig = self._map_signature_smart(self._safe_str(llm_data.get("text_signature_status", "")), visual_sig_count)
 
             db.close()
             return {
@@ -302,7 +321,7 @@ class PipelineManager:
                 "signature": final_sig,
                 "company_type": self._map_choice(llm_data.get("company_type"), COMPANY_CHOICES),
                 "signing_party": final_party, "country": final_country, "address": address,
-                "signed_date": filename_date or llm_data.get("signed_date", ""),
+                "signed_date": filename_date or self._safe_str(llm_data.get("signed_date", "")),
                 "telenity_entity": telenity_code, "telenity_fullname": telenity_full,
                 "confidence_score": confidence, 
                 "durum_notu": "Tamamlandı", "file_hash": file_hash,
@@ -315,6 +334,7 @@ class PipelineManager:
             return {"error": str(e), "dosya_adi": filename}
 
     def run_job(self, job_id: int, folder_path: str):
+        # (Aynı kalabilir)
         db = SessionLocal()
         job = db.query(AnalysisJob).filter(AnalysisJob.id == job_id).first()
         if not job: db.close(); return
@@ -323,13 +343,11 @@ class PipelineManager:
             connected, _ = self.llm_client.autodetect_connection()
             if not connected: logger.warning("LM Studio bağlantısı yok.")
             
-            # GÜNCELLENDİ: OS.WALK ile alt klasörleri tarama
             all_files_to_process = []
             logger.info(f"Scanning folder recursively: {folder_path}")
             for root, dirs, files in os.walk(folder_path):
                 for f in files:
                     if f.lower().endswith(".pdf"):
-                        # Dosya adı ve bulunduğu klasör yolunu sakla
                         all_files_to_process.append((f, root))
             
             total = len(all_files_to_process)
@@ -337,7 +355,6 @@ class PipelineManager:
                 job.status = "COMPLETED"; job.message = "Dosya bulunamadı"; db.commit(); return
 
             processed = 0
-            # Batching logic adapted for tuple list
             batches = [all_files_to_process[i:i + BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
             all_contracts = []
 
@@ -345,7 +362,6 @@ class PipelineManager:
                 db.refresh(job)
                 if job.status == "CANCELLED": break
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                    # Process single file artık (filename, folder_path, job_root) alıyor
                     futures = {
                         executor.submit(self.process_single_file, f, root, folder_path): f 
                         for f, root in batch
