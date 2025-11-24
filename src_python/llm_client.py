@@ -32,30 +32,27 @@ class LLMClient:
         if not self.is_connected:
             return {}
 
-        # src_python/llm_client.py içindeki system_prompt:
-
+        # System Prompt (CONFIDENCE SCORE EKLENDİ)
         system_prompt = """Extract contract data as JSON. 
-WARNING: Strict Rules Apply.
+WARNING: Be precise. Do NOT hallucinate.
 
-1. signing_party: The name of the Counterparty ONLY. 
-   - STRICTLY EXCLUDE "Telenity", "Telenity FZE", "Telenity Inc".
-   - If text says "Between Telenity and Google", output ONLY "Google".
-   - Do NOT output "Telenity and Google".
-
-2. address: The FULL address of the Counterparty ONLY.
-   - If you see Telenity's address (Maslak, Istanbul, Dubai, Monroe, Noida), IGNORE IT.
-   - Look for the address under the Counterparty's signature or specific 'Notices' section.
-   - If two addresses are present (Telenity & Partner), output ONLY the Partner's address.
-
-3. country: The country of the Counterparty (derived from the address above). 
-   - NOT Turkey (unless counterparty is Turkish). 
-   - NOT UAE (unless counterparty is from UAE).
-
-4. contract_name: Specific Title (e.g. "Service Agreement"). No dates.
-5. signed_date: YYYY-MM-DD. Look for handwritten dates in signature block.
-6. doc_type: Pick one: {doc_types}
-7. company_type: Pick one: {company_types}
-8. found_telenity_name: Exact Telenity entity name found in doc.
+Field Rules:
+1. doc_type: Must be exactly one of: {doc_types}. If unsure, pick closest.
+2. company_type: Must be exactly one of: {company_types}.
+3. contract_name: extract the specific TITLE of the agreement. 
+   - Good: "Master Services Agreement", "Non-Disclosure Agreement for Project X"
+   - Bad: "Agreement", "Contract", "Page 1". 
+   - Do NOT include dates or addresses in the title.
+4. address: Find the full address of the Counterparty (NOT Telenity). 
+   - Look at the VERY END of the document (signature block).
+   - Look for 'Registered Office', 'Principal Place of Business'.
+5. country: Extract the country from the address found above.
+6. signed_date: Look for handwritten dates in signature blocks or "Effective Date". Format: YYYY-MM-DD.
+7. found_telenity_name: Find exact Telenity entity name in doc (e.g. "Telenity FZE").
+8. confidence_score: Rate your confidence in the extracted data from 0 to 100 (Integer). 
+   - 100: Perfect extraction, clear text/signatures.
+   - 50: Blurry text, missing fields, unsure about party name.
+   - 0: Cannot read document.
 
 Output JSON:
 {{
@@ -67,11 +64,11 @@ Output JSON:
   "address": "String",
   "signed_date": "YYYY-MM-DD",
   "text_signature_status": "String",
-  "found_telenity_name": "String"
+  "found_telenity_name": "String",
+  "confidence_score": 0
 }}
 """
 
-        # 2. Context Optimization (Metin çok uzunsa başını ve sonunu birleştir)
         max_chars = 12000 
         if len(text) > max_chars:
             half = max_chars // 2
@@ -84,7 +81,7 @@ Output JSON:
 TEXT: {processed_text}
 
 Output JSON:
-{{"contract_name":"","doc_type":"","text_signature_status":"","company_type":"","signing_party":"","country":"","address":"","signed_date":"","found_telenity_name":""}}"""
+{{"contract_name":"","doc_type":"","text_signature_status":"","company_type":"","signing_party":"","country":"","address":"","signed_date":"","found_telenity_name":"","confidence_score":0}}"""
         
         system_prompt = system_prompt.format(
             doc_types=", ".join(DOC_TYPE_CHOICES),
@@ -93,7 +90,6 @@ Output JSON:
 
         user_content = [{"type": "text", "text": user_prompt}]
         
-        # Vision Image Handling
         if images:
             for img_b64 in images:
                 user_content.append({
@@ -113,9 +109,9 @@ Output JSON:
 
         last_error = None
         
-        # 3. Request & Retry Mechanism
         for attempt in range(2): 
             try:
+                # Timeout 300sn (5dk) yapıldı
                 resp = requests.post(self.api_url, json=payload, timeout=300)
                 
                 if resp.status_code == 200:
@@ -133,7 +129,6 @@ Output JSON:
                 logger.warning(f"LLM attempt {attempt+1} exception: {e}")
                 time.sleep(1)
 
-        # 4. Vision Fallback
         if images:
             logger.error(f"Vision request FAILED. Reason: {last_error}")
             logger.info("Retrying with TEXT ONLY mode...")
@@ -145,10 +140,7 @@ Output JSON:
         if not self.is_connected:
             return None
             
-        prompt = """
-Look at this document image. Identify which Telenity company this document belongs to based on the logo, header, or letterhead.
-Respond with ONLY the exact company name or "Unknown".
-"""
+        prompt = "Look at this document. Identify Telenity Company Name. Return ONLY the name."
         payload = {
             "model": self.model_name,
             "messages": [
@@ -156,26 +148,21 @@ Respond with ONLY the exact company name or "Unknown".
                     "role": "user",
                     "content": [
                         {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
-                        }
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
                     ]
                 }
             ],
             "temperature": 0.1,
             "stream": False,
         }
-        
         try:
             resp = requests.post(self.api_url, json=payload, timeout=60)
             if resp.status_code == 200:
                 content = resp.json()["choices"][0]["message"]["content"].strip()
                 if "FZE" in content or "Dubai" in content: return "FzE - Telenity UAE", "Telenity FZE"
                 elif "Inc" in content or "Monroe" in content: return "TU - Telenity USA", "Telenity Inc"
-                elif "İletişim" in content or "Turkey" in content or "Istanbul" in content: return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş."
-                elif "India" in content or "Noida" in content: return "TI - Telenity India", "Telenity Systems Software India Private Limited"
+                elif "İletişim" in content or "Turkey" in content: return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş."
+                elif "India" in content: return "TI - Telenity India", "Telenity Systems Software India Private Limited"
         except Exception as e:
-            logger.error(f"Vision Telenity detection failed: {e}")
-        
+            logger.error(f"Vision detection failed: {e}")
         return None
