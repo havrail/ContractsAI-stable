@@ -8,6 +8,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any, Callable
 
+# 3. Party Libs
 from pdf2image import convert_from_path
 import pytesseract
 from PIL import Image
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 import cv2
 import numpy as np
 
+# Local Modules
 from database import SessionLocal, get_db
 from models import AnalysisJob, Contract
 from image_processing import ImageProcessor
@@ -42,10 +44,13 @@ from config import (
     COMPANY_CHOICES
 )
 
+# Tesseract Configuration
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 TESSERACT_CONFIG = "--oem 1 --psm 6"
-SCAN_DPI = 100  
-FINAL_DPI = 200 
+
+# DPI Ayarları
+SCAN_DPI = 100  # İmza aramak için hızlı tarama kalitesi
+FINAL_DPI = 200 # LLM'e gidecek okunaklı kalite
 
 class PipelineManager:
     def __init__(self, log_callback: Optional[Callable[[str], None]] = None):
@@ -153,7 +158,8 @@ class PipelineManager:
         if "telenity" in sig: return "Telenity Signed"
         return "Telenity Signed"
 
-    def process_single_file(self, filename: str, folder_path: str) -> Dict[str, Any]:
+    # GÜNCELLENDİ: Job Root parametresi eklendi
+    def process_single_file(self, filename: str, folder_path: str, job_root: str = None) -> Dict[str, Any]:
         full_path = os.path.join(folder_path, filename)
         db = None
         try:
@@ -171,11 +177,28 @@ class PipelineManager:
                     "address": cached.address, "signed_date": str(cached.signed_date) if cached.signed_date else "",
                     "signature": cached.signature, "telenity_entity": cached.telenity_entity,
                     "telenity_fullname": cached.telenity_fullname, "file_hash": file_hash, 
-                    "confidence_score": cached.confidence_score, # YENİ
+                    "confidence_score": cached.confidence_score,
                     "durum_notu": "Önbellekten"
                 }
                 db.close()
                 return result
+
+            # --- KLASÖR İSMİNDEN ŞİRKET BULMA (YENİ ÖZELLİK) ---
+            folder_company_name = ""
+            if job_root:
+                abs_folder = os.path.abspath(folder_path)
+                abs_root = os.path.abspath(job_root)
+                
+                # Eğer dosya bir alt klasördeyse (Ana klasörde değilse)
+                if abs_folder != abs_root and abs_folder.startswith(abs_root):
+                    # Ana klasöre göre göreceli yolu al (Örn: "Vodafone/2023")
+                    rel_path = os.path.relpath(abs_folder, abs_root)
+                    # İlk parça şirket ismidir (Örn: "Vodafone")
+                    top_subfolder = rel_path.split(os.sep)[0]
+                    if top_subfolder and top_subfolder != ".":
+                        folder_company_name = top_subfolder
+                        logger.info(f"📁 Folder-based Company Detected: '{folder_company_name}'")
+            # ----------------------------------------------------
 
             text = ""
             is_scanned = False
@@ -215,21 +238,32 @@ class PipelineManager:
 
             contract_name = self._clean_contract_name(llm_data.get("contract_name", ""))
             
-            raw_party = llm_data.get("signing_party", "")
-            final_party = self._clean_signing_party(raw_party)
-            if not final_party:
-                filename_company = extract_company_from_filename(filename)
-                if filename_company:
-                    logger.info(f"Recovered party from filename: '{filename_company}'")
-                    final_party = filename_company
+            # --- PARTY BELİRLEME ÖNCELİKLERİ (YENİ) ---
+            final_party = ""
+            confidence = int(llm_data.get("confidence_score", 0))
+
+            # 1. Öncelik: Klasör İsmi (En Güvenilir)
+            if folder_company_name:
+                final_party = self._clean_signing_party(folder_company_name)
+                confidence = 100 # Klasörden geldiyse %100 eminiz
+                logger.info(f"Using Folder Name as Party: '{final_party}'")
+            else:
+                # 2. Öncelik: LLM
+                raw_party = llm_data.get("signing_party", "")
+                final_party = self._clean_signing_party(raw_party)
+                
+                # 3. Öncelik: Dosya İsmi (Kurtarma)
+                if not final_party:
+                    filename_company = extract_company_from_filename(filename)
+                    if filename_company:
+                        logger.info(f"Recovered party from filename: '{filename_company}'")
+                        final_party = filename_company
+            # ------------------------------------------
 
             address = filter_telenity_address(clean_turkish_chars(llm_data.get("address", "")))
             raw_country = llm_data.get("country", "")
             final_country = normalize_country(raw_country)
             
-            # Confidence Score
-            confidence = int(llm_data.get("confidence_score", 0))
-
             # --- FUZZY MATCHING & AUTO-LEARN ---
             import json
             kb_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "known_companies.json")
@@ -239,14 +273,13 @@ class PipelineManager:
                     with open(kb_path, "r", encoding="utf-8") as f: known_db = json.load(f)
                 except: pass
 
-            # Fuzzy Match with TheFuzz
             if final_party and (not address or not final_country):
                 match = find_best_company_match(final_party, known_db, threshold=80)
                 if match:
                     logger.info(f"🧠 Fuzzy Match: '{final_party}' found in DB")
                     if not address: address = match.get("address", "")
                     if not final_country: final_country = match.get("country", "")
-                    confidence = 100 # Veritabanından geldiyse güven tamdır
+                    confidence = 100
 
             if final_party and address and final_country and len(address) > 10:
                 party_key = final_party.lower().strip()
@@ -271,7 +304,7 @@ class PipelineManager:
                 "signing_party": final_party, "country": final_country, "address": address,
                 "signed_date": filename_date or llm_data.get("signed_date", ""),
                 "telenity_entity": telenity_code, "telenity_fullname": telenity_full,
-                "confidence_score": confidence, # YENİ
+                "confidence_score": confidence, 
                 "durum_notu": "Tamamlandı", "file_hash": file_hash,
             }
 
@@ -282,7 +315,6 @@ class PipelineManager:
             return {"error": str(e), "dosya_adi": filename}
 
     def run_job(self, job_id: int, folder_path: str):
-        # (Aynı kalabilir)
         db = SessionLocal()
         job = db.query(AnalysisJob).filter(AnalysisJob.id == job_id).first()
         if not job: db.close(); return
@@ -290,19 +322,43 @@ class PipelineManager:
             job.status = "RUNNING"; job.message = "Analiz (Smart Scan) başlıyor..."; db.commit()
             connected, _ = self.llm_client.autodetect_connection()
             if not connected: logger.warning("LM Studio bağlantısı yok.")
-            files = [f for f in os.listdir(folder_path) if f.lower().endswith(".pdf")]
-            if not files: job.status = "COMPLETED"; job.message = "Dosya bulunamadı"; db.commit(); return
-            total = len(files); processed = 0; batches = [files[i:i + BATCH_SIZE] for i in range(0, len(files), BATCH_SIZE)]; all_contracts = []
+            
+            # GÜNCELLENDİ: OS.WALK ile alt klasörleri tarama
+            all_files_to_process = []
+            logger.info(f"Scanning folder recursively: {folder_path}")
+            for root, dirs, files in os.walk(folder_path):
+                for f in files:
+                    if f.lower().endswith(".pdf"):
+                        # Dosya adı ve bulunduğu klasör yolunu sakla
+                        all_files_to_process.append((f, root))
+            
+            total = len(all_files_to_process)
+            if total == 0:
+                job.status = "COMPLETED"; job.message = "Dosya bulunamadı"; db.commit(); return
+
+            processed = 0
+            # Batching logic adapted for tuple list
+            batches = [all_files_to_process[i:i + BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
+            all_contracts = []
+
             for batch in batches:
                 db.refresh(job)
                 if job.status == "CANCELLED": break
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                    futures = {executor.submit(self.process_single_file, f, folder_path): f for f in batch}
+                    # Process single file artık (filename, folder_path, job_root) alıyor
+                    futures = {
+                        executor.submit(self.process_single_file, f, root, folder_path): f 
+                        for f, root in batch
+                    }
                     for future in as_completed(futures):
                         res = future.result()
                         if "error" not in res: all_contracts.append(Contract(job_id=job_id, **res))
                         processed += 1
-                        if processed % 2 == 0: job.progress = int((processed / total) * 100); job.message = f"İşleniyor: {processed}/{total}"; db.commit()
+                        if processed % 2 == 0: 
+                            job.progress = int((processed / total) * 100)
+                            job.message = f"İşleniyor: {processed}/{total}"
+                            db.commit()
+            
             if all_contracts: db.bulk_save_objects(all_contracts); db.commit()
             job.status = "COMPLETED"; job.message = f"Tamamlandı ({processed} dosya)"; job.progress = 100; db.commit()
             self.export_to_excel(job_id, folder_path)
@@ -322,7 +378,7 @@ class PipelineManager:
                     "Signature": c.signature, "Company Type": c.company_type, "Signing Party": c.signing_party,
                     "Country": c.country, "Address": c.address, "Signed Date": c.signed_date,
                     "Telenity Entity": c.telenity_entity, "Telenity Entity Full Name": c.telenity_fullname, 
-                    "Güven Skoru (%)": c.confidence_score, # YENİ SÜTUN
+                    "Güven Skoru (%)": c.confidence_score,
                     "Durum": c.durum_notu
                 })
             df = pd.DataFrame(data)
