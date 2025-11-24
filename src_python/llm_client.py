@@ -1,4 +1,3 @@
-# src_python/llm_client.py
 import requests
 import json
 import time
@@ -32,13 +31,18 @@ class LLMClient:
     def get_analysis(self, text, filename=None, images=None, filename_date=None):
         if not self.is_connected: return {}
 
+        # System Prompt: Contract Name kuralı güncellendi
         system_prompt = """Extract contract data as JSON. 
 WARNING: Be precise. Do NOT hallucinate.
 
 Field Rules:
 1. doc_type: Must be exactly one of: {doc_types}. If unsure, pick closest.
 2. company_type: Must be exactly one of: {company_types}.
-3. contract_name: extract the specific TITLE. No dates/addresses.
+3. contract_name: 
+   - Look at the TOP of the FIRST PAGE. 
+   - Extract the capitalized/bold TITLE (e.g. "MASTER SERVICES AGREEMENT").
+   - Do NOT include the parties or date in the title (e.g. remove "Between X and Y").
+   - If there is no clear title, infer it from the content (e.g. "NDA").
 4. address: Find the FULL address of the Counterparty (NOT Telenity). 
    - Look at the FIRST PAGE header/preamble OR the LAST PAGE signature block.
    - If you see Telenity's address (Maslak, Istanbul, Dubai, Monroe), IGNORE IT.
@@ -124,16 +128,11 @@ Output JSON:
 
         return {}
 
-    # --- YENİ EKLENEN: AI DENETÇİ (VERIFIER) ---
     def verify_extraction(self, current_data, text, filename):
-        """
-        Çıkarılan veriyi ham metinle kıyaslayıp tutarsızlıkları düzeltir.
-        Sadece metin tabanlı çalıştığı için çok hızlıdır.
-        """
+        """AI Auditor: Metin tabanlı ikinci kontrol."""
         if not self.is_connected: return current_data
 
-        # Context Optimization
-        max_chars = 6000 # Denetim için daha az metin yeterli
+        max_chars = 6000
         if len(text) > max_chars:
             half = max_chars // 2
             processed_text = text[:half] + "\n...[END]...\n" + text[-half:]
@@ -151,10 +150,10 @@ CURRENT EXTRACTED DATA:
 {json.dumps(current_data, indent=2)}
 
 INSTRUCTIONS:
-1. Check 'signing_party': Is it consistent with the filename? (Filename is usually more accurate).
-2. Check 'country': Does the 'address' actually belong to this country? (e.g. Tallinn is in Estonia, not Turkey).
+1. Check 'signing_party': Is it consistent with the filename?
+2. Check 'country': Does the 'address' actually belong to this country?
 3. Check 'signed_date': Is the filename date more accurate?
-4. Check 'address': Is it a Telenity address (Maslak/Dubai)? If so, clear it.
+4. Check 'contract_name': Extract the actual title from the text if the current one is generic (e.g. "Agreement").
 
 OUTPUT:
 Return the CORRECTED JSON object. If no changes needed, return the same JSON.
@@ -180,7 +179,7 @@ Return the CORRECTED JSON object. If no changes needed, return the same JSON.
         except Exception as e:
             logger.warning(f"AI Verification failed: {e}")
         
-        return current_data # Hata olursa eski veriyi döndür
+        return current_data
 
     def detect_telenity_visual(self, image_b64):
         if not self.is_connected: return None
