@@ -1,0 +1,32 @@
+# Web Framework & API
+fastapi
+uvicorn
+gunicorn
+python-multipart
+requests
+
+# Database & ORM
+sqlalchemy
+alembic
+psycopg2-binary  # PostgreSQL için (Docker/Prod)
+python-dotenv
+
+# Asynchronous Tasks & Cache
+celery[redis]
+redis
+
+# Image Processing & OCR
+opencv-python-headless  # Sunucu ortamı için headless versiyon daha iyidir
+numpy
+Pillow
+pdf2image
+pytesseract
+PyPDF2
+
+# Text Analysis & Fuzzy Matching
+thefuzz==0.22.1
+python-levenshtein==0.25.0  # TheFuzz hızlandırıcısı
+
+# Monitoring & Utils
+sentry-sdk
+flower  # Celery monitoring için
