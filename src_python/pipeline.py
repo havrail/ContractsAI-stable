@@ -8,7 +8,6 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any, Callable
 
-# 3. Party Libs
 from pdf2image import convert_from_path
 import pytesseract
 from PIL import Image
@@ -17,7 +16,6 @@ from sqlalchemy.orm import Session
 import cv2
 import numpy as np
 
-# Local Modules
 from database import SessionLocal, get_db
 from models import AnalysisJob, Contract
 from image_processing import ImageProcessor
@@ -29,7 +27,7 @@ from utils import (
     filter_telenity_address,
     normalize_country,
     find_best_company_match,
-    extract_company_from_filename # <--- YENİ EKLENEN
+    extract_company_from_filename
 )
 from logger import logger
 from cache import cache
@@ -44,13 +42,10 @@ from config import (
     COMPANY_CHOICES
 )
 
-# Tesseract Configuration
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 TESSERACT_CONFIG = "--oem 1 --psm 6"
-
-# DPI Ayarları
-SCAN_DPI = 100  # İmza aramak için hızlı tarama kalitesi
-FINAL_DPI = 200 # LLM'e gidecek okunaklı kalite
+SCAN_DPI = 100  
+FINAL_DPI = 200 
 
 class PipelineManager:
     def __init__(self, log_callback: Optional[Callable[[str], None]] = None):
@@ -79,28 +74,38 @@ class PipelineManager:
         return b64_list
 
     def identify_key_pages(self, full_path: str, num_pages: int) -> List[int]:
-        signature_pages = set()
-        signature_pages.add(0) 
+        key_pages = set()
+        key_pages.add(0) 
 
         try:
+            try:
+                reader = PdfReader(full_path)
+                keywords = ["notices", "tebligat", "adres:", "address:", "registered office"]
+                for i, page in enumerate(reader.pages):
+                    txt = (page.extract_text() or "").lower()
+                    if any(kw in txt for kw in keywords):
+                        if "address" in txt and ("street" in txt or "no:" in txt): key_pages.add(i)
+                        elif "tebligat" in txt and ("adres" in txt or "no:" in txt): key_pages.add(i)
+            except: pass
+
             logger.info(f"Scanning {num_pages} pages at {SCAN_DPI} DPI for signatures...")
             low_res_images = convert_from_path(full_path, dpi=SCAN_DPI, poppler_path=POPPLER_PATH)
             for i, img in enumerate(low_res_images):
                 if i == 0: continue
                 if ImageProcessor.detect_visual_signature(img):
-                    signature_pages.add(i)
-            if len(signature_pages) == 1: signature_pages.add(num_pages - 1)
+                    key_pages.add(i)
+            if len(key_pages) == 1: key_pages.add(num_pages - 1)
         except Exception as e:
-            logger.error(f"Scan signature error: {e}. Falling back to First/Last.")
-            if num_pages > 1: signature_pages.add(num_pages - 1)
+            logger.error(f"Scan signature error: {e}.")
+            if num_pages > 1: key_pages.add(num_pages - 1)
 
-        sorted_pages = sorted(list(signature_pages))
-        if len(sorted_pages) > 4:
-            logger.warning(f"Too many signature pages ({len(sorted_pages)}). Limiting.")
-            limited_set = {0}
-            limited_set.add(sorted_pages[-1])
-            if len(sorted_pages) > 2: limited_set.add(sorted_pages[-2])
-            return sorted(list(limited_set))
+        sorted_pages = sorted(list(key_pages))
+        if len(sorted_pages) > 5:
+            logger.warning(f"Too many pages ({len(sorted_pages)}). Optimizing.")
+            optimized = {0, sorted_pages[-1]}
+            mid = sorted_pages[1:-1]
+            if mid: optimized.update(mid[:3])
+            return sorted(list(optimized))
         return sorted_pages
 
     def get_optimized_images_for_llm(self, full_path: str, key_indices: List[int]) -> List[Any]:
@@ -110,7 +115,7 @@ class PipelineManager:
             try:
                 imgs = convert_from_path(full_path, dpi=FINAL_DPI, poppler_path=POPPLER_PATH, first_page=page_num, last_page=page_num)
                 if imgs: final_images.append(imgs[0])
-            except Exception as e: logger.error(f"Error fetching high-res page {page_num}: {e}")
+            except Exception as e: logger.error(f"Error fetching page {page_num}: {e}")
         return final_images
 
     def _clean_signing_party(self, party_name):
@@ -159,14 +164,15 @@ class PipelineManager:
             cached = db.query(Contract).filter(Contract.file_hash == file_hash).first()
             if cached:
                 logger.info(f"DB Cache HIT: {filename}")
-                # ... (Cache return logic - shortened for brevity)
                 result = {
                     "dosya_adi": filename, "contract_name": cached.contract_name,
                     "doc_type": cached.doc_type, "company_type": cached.company_type,
                     "signing_party": cached.signing_party, "country": cached.country,
                     "address": cached.address, "signed_date": str(cached.signed_date) if cached.signed_date else "",
                     "signature": cached.signature, "telenity_entity": cached.telenity_entity,
-                    "telenity_fullname": cached.telenity_fullname, "file_hash": file_hash, "durum_notu": "Önbellekten"
+                    "telenity_fullname": cached.telenity_fullname, "file_hash": file_hash, 
+                    "confidence_score": cached.confidence_score, # YENİ
+                    "durum_notu": "Önbellekten"
                 }
                 db.close()
                 return result
@@ -209,21 +215,20 @@ class PipelineManager:
 
             contract_name = self._clean_contract_name(llm_data.get("contract_name", ""))
             
-            # --- PARTY TEMİZLİĞİ VE DOSYA ADINDAN KURTARMA ---
             raw_party = llm_data.get("signing_party", "")
             final_party = self._clean_signing_party(raw_party)
-            
-            # Eğer LLM şirketi bulamadıysa veya sildiysek, dosya adına bak!
             if not final_party:
                 filename_company = extract_company_from_filename(filename)
                 if filename_company:
-                    logger.info(f"LLM missed signing party. Recovered from filename: '{filename_company}'")
+                    logger.info(f"Recovered party from filename: '{filename_company}'")
                     final_party = filename_company
-            # -------------------------------------------------
 
             address = filter_telenity_address(clean_turkish_chars(llm_data.get("address", "")))
             raw_country = llm_data.get("country", "")
             final_country = normalize_country(raw_country)
+            
+            # Confidence Score
+            confidence = int(llm_data.get("confidence_score", 0))
 
             # --- FUZZY MATCHING & AUTO-LEARN ---
             import json
@@ -234,12 +239,14 @@ class PipelineManager:
                     with open(kb_path, "r", encoding="utf-8") as f: known_db = json.load(f)
                 except: pass
 
+            # Fuzzy Match with TheFuzz
             if final_party and (not address or not final_country):
                 match = find_best_company_match(final_party, known_db, threshold=80)
                 if match:
                     logger.info(f"🧠 Fuzzy Match: '{final_party}' found in DB")
                     if not address: address = match.get("address", "")
                     if not final_country: final_country = match.get("country", "")
+                    confidence = 100 # Veritabanından geldiyse güven tamdır
 
             if final_party and address and final_country and len(address) > 10:
                 party_key = final_party.lower().strip()
@@ -264,6 +271,7 @@ class PipelineManager:
                 "signing_party": final_party, "country": final_country, "address": address,
                 "signed_date": filename_date or llm_data.get("signed_date", ""),
                 "telenity_entity": telenity_code, "telenity_fullname": telenity_full,
+                "confidence_score": confidence, # YENİ
                 "durum_notu": "Tamamlandı", "file_hash": file_hash,
             }
 
@@ -274,7 +282,7 @@ class PipelineManager:
             return {"error": str(e), "dosya_adi": filename}
 
     def run_job(self, job_id: int, folder_path: str):
-        # (Run Job kodu aynı kalabilir, değişiklik yok)
+        # (Aynı kalabilir)
         db = SessionLocal()
         job = db.query(AnalysisJob).filter(AnalysisJob.id == job_id).first()
         if not job: db.close(); return
@@ -313,7 +321,9 @@ class PipelineManager:
                     "Dosya Adı": c.dosya_adi, "Contract Name": c.contract_name, "Doc. Type": c.doc_type,
                     "Signature": c.signature, "Company Type": c.company_type, "Signing Party": c.signing_party,
                     "Country": c.country, "Address": c.address, "Signed Date": c.signed_date,
-                    "Telenity Entity": c.telenity_entity, "Telenity Entity Full Name": c.telenity_fullname, "Durum": c.durum_notu
+                    "Telenity Entity": c.telenity_entity, "Telenity Entity Full Name": c.telenity_fullname, 
+                    "Güven Skoru (%)": c.confidence_score, # YENİ SÜTUN
+                    "Durum": c.durum_notu
                 })
             df = pd.DataFrame(data)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M")
