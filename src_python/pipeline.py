@@ -1,4 +1,3 @@
-# src_python/pipeline.py
 import os
 import io
 import base64
@@ -28,7 +27,8 @@ from utils import (
     extract_date_from_filename, 
     clean_turkish_chars, 
     filter_telenity_address,
-    normalize_country
+    normalize_country,
+    find_best_company_match  # <--- YENİ: Fuzzy Match fonksiyonunu import ettik
 )
 from logger import logger
 from cache import cache
@@ -267,6 +267,55 @@ class PipelineManager:
             # Country Normalization
             raw_country = llm_data.get("country", "")
             final_country = normalize_country(raw_country)
+
+            # ---------------------------------------------------------
+            # YENİ: FUZZY MATCHING İLE HAFIZADAN TAMAMLAMA
+            # ---------------------------------------------------------
+            import json
+            kb_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "known_companies.json")
+            
+            # 1. HAFIZAYI YÜKLE
+            known_db = {}
+            if os.path.exists(kb_path):
+                try:
+                    with open(kb_path, "r", encoding="utf-8") as f:
+                        known_db = json.load(f)
+                except: pass
+
+            # 2. EKSİKLERİ TAMAMLA (FUZZY LOGIC)
+            # Eğer adres veya ülke boşsa, fuzzy match ile bulmaya çalış
+            if final_party and (not address or not final_country):
+                # Yeni Fuzzy fonksiyonunu kullan
+                match = find_best_company_match(final_party, known_db, threshold=80)
+                
+                if match:
+                    logger.info(f"🧠 Fuzzy Match: '{final_party}' found in DB")
+                    if not address: address = match.get("address", "")
+                    if not final_country: final_country = match.get("country", "")
+
+            # 3. HAFIZAYA KAYDET (Otomatik Öğrenme)
+            if final_party and address and final_country and len(address) > 10:
+                party_key = final_party.lower().strip()
+                
+                should_update = False
+                if party_key not in known_db:
+                    should_update = True
+                elif len(address) > len(known_db[party_key].get("address", "")):
+                    should_update = True
+                
+                if should_update:
+                    known_db[party_key] = {
+                        "full_name": final_party,
+                        "address": address,
+                        "country": final_country
+                    }
+                    try:
+                        with open(kb_path, "w", encoding="utf-8") as f:
+                            json.dump(known_db, f, indent=4, ensure_ascii=False)
+                        logger.info(f"🧠 Learned: '{final_party}'")
+                    except Exception as e:
+                        logger.warning(f"Could not update memory: {e}")
+            # ---------------------------------------------------------
 
             # Signature Logic
             visual_sig_count = len([p for p in target_page_indices if p != 0])
