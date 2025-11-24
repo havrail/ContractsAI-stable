@@ -1,73 +1,41 @@
 import re
 import unicodedata
-from difflib import SequenceMatcher
-from config import TELENITY_MAP, ADDRESS_BLACKLIST, DOC_TYPE_CHOICES # <--- DOC_TYPE_CHOICES eklendi
+from thefuzz import process, fuzz # <--- YENİ KÜTÜPHANE
+from config import TELENITY_MAP, ADDRESS_BLACKLIST, DOC_TYPE_CHOICES
 
 def asciify_text(text):
     if not text: return ""
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
-# --- YENİ: DOSYA İSMİNDEN ŞİRKET BULUCU ---
 def extract_company_from_filename(filename):
-    """
-    Dosya ismini parçalar, tarihleri ve gereksiz kelimeleri atar,
-    geriye kalan en olası şirket ismini döndürür.
-    Örn: "Vodafone_2025_Agreement.pdf" -> "Vodafone"
-    """
     if not filename: return None
-    
-    # Uzantıyı at
     name = filename.rsplit('.', 1)[0]
-    
-    # Yaygın ayraçlara göre böl (_, -, boşluk)
-    # "Sam Media Limited_2025" -> ["Sam Media Limited", "2025"]
     parts = re.split(r'[-_]', name)
     
-    # Yasaklı Kelimeler Listesi (Gürültü)
-    # Config'deki doküman tiplerini (NDA, Agreement vb.) ve genel terimleri ekle
     ignore_list = set(x.lower() for x in DOC_TYPE_CHOICES)
     ignore_list.update([
         "signed", "clean", "copy", "final", "draft", "contract", "agreement", 
-        "telenity", "v1", "v2", "rev", "eng", "tr", "tur", "executed"
+        "telenity", "v1", "v2", "rev", "eng", "tr", "tur", "executed", "scan"
     ])
     
     potential_names = []
-    
     for part in parts:
         clean_part = part.strip()
         lower_part = clean_part.lower()
-        
         if not clean_part: continue
-        
-        # 1. Tarih Filtresi (2025, 20240101 vb.)
         if re.search(r'\d{4}', clean_part): continue 
-        
-        # 2. Yasaklı Kelime Filtresi
-        # Parça tamamen yasaklı listede mi? (Örn: "NDA")
         if lower_part in ignore_list: continue
-        
-        # Parça yasaklı kelimeyi içeriyor mu? (Örn: "Signed_Copy")
-        if any(ign in lower_part for ign in ["signed", "draft", "copy", "version"]):
-            continue
-            
-        # 3. Telenity Filtresi
+        if any(ign in lower_part for ign in ["signed", "draft", "copy", "version"]): continue
         if "telenity" in lower_part: continue
-        
-        # 4. Uzunluk Filtresi (Çok kısa kısaltmalar riskli)
         if len(clean_part) < 3: continue
-        
         potential_names.append(clean_part)
         
-    # Genelde dosya isminin ilk anlamlı parçası şirket adıdır.
-    if potential_names:
-        return potential_names[0] 
-        
+    if potential_names: return potential_names[0] 
     return None
 
 def extract_date_from_filename(filename):
     if not filename: return None
     name = filename.rsplit('.', 1)[0]
-    clean_name = re.sub(r'(?i)(clean|copy|signed|final|draft|v\d+)', '', name)
     
     match = re.search(r'(\d{4})[-_.\s]+(\d{1,2})[-_.\s]+(\d{1,2})', name)
     if match: return f"{match.group(1)}-{int(match.group(2)):02d}-{int(match.group(3)):02d}"
@@ -109,8 +77,7 @@ def filter_telenity_address(address):
     address_ascii = asciify_text(address.lower())
     for keyword in ADDRESS_BLACKLIST:
         keyword_ascii = asciify_text(keyword.lower())
-        if keyword_ascii in address_ascii:
-            return "" 
+        if keyword_ascii in address_ascii: return "" 
     splitters = [';', ' and ', ' & ', ' vs ']
     for splitter in splitters:
         if splitter in address:
@@ -150,17 +117,24 @@ def normalize_country(country_name):
         if key in name: return val
     return country_name.title()
 
+# --- THEFUZZ GÜNCELLEMESİ ---
 def find_best_company_match(query, company_db, threshold=80):
-    if not query: return None
-    query_lower = query.lower()
-    best_match = None
-    highest_score = 0
-    for key, data in company_db.items():
-        key_lower = key.lower()
-        if key_lower in query_lower or query_lower in key_lower: return data
-        score = SequenceMatcher(None, query_lower, key_lower).ratio() * 100
-        if score > highest_score:
-            highest_score = score
-            best_match = data
-    if highest_score >= threshold: return best_match
+    """
+    TheFuzz kütüphanesi ile en iyi eşleşmeyi bulur.
+    'G00gle' -> 'Google' eşleşmesini %90 skorla yakalar.
+    """
+    if not query or not company_db: return None
+    
+    # Company DB'deki anahtarları (Şirket isimlerini) listele
+    choices = list(company_db.keys())
+    
+    # process.extractOne en iyi eşleşmeyi ve skoru döndürür
+    # Örn: ('Vodafone', 95)
+    best_match = process.extractOne(query, choices, scorer=fuzz.token_sort_ratio)
+    
+    if best_match:
+        matched_name, score = best_match
+        if score >= threshold:
+            return company_db[matched_name]
+            
     return None
