@@ -32,27 +32,22 @@ class LLMClient:
         if not self.is_connected:
             return {}
 
-        # System Prompt (CONFIDENCE SCORE EKLENDİ)
         system_prompt = """Extract contract data as JSON. 
 WARNING: Be precise. Do NOT hallucinate.
 
 Field Rules:
 1. doc_type: Must be exactly one of: {doc_types}. If unsure, pick closest.
 2. company_type: Must be exactly one of: {company_types}.
-3. contract_name: extract the specific TITLE of the agreement. 
-   - Good: "Master Services Agreement", "Non-Disclosure Agreement for Project X"
-   - Bad: "Agreement", "Contract", "Page 1". 
-   - Do NOT include dates or addresses in the title.
-4. address: Find the full address of the Counterparty (NOT Telenity). 
-   - Look at the VERY END of the document (signature block).
-   - Look for 'Registered Office', 'Principal Place of Business'.
-5. country: Extract the country from the address found above.
-6. signed_date: Look for handwritten dates in signature blocks or "Effective Date". Format: YYYY-MM-DD.
-7. found_telenity_name: Find exact Telenity entity name in doc (e.g. "Telenity FZE").
-8. confidence_score: Rate your confidence in the extracted data from 0 to 100 (Integer). 
-   - 100: Perfect extraction, clear text/signatures.
-   - 50: Blurry text, missing fields, unsure about party name.
-   - 0: Cannot read document.
+3. contract_name: extract the specific TITLE. No dates/addresses.
+4. address: Find the FULL address of the Counterparty (NOT Telenity). 
+   - Look at the FIRST PAGE header/preamble OR the LAST PAGE signature block.
+   - If you see Telenity's address (Maslak, Istanbul, Dubai, Monroe), IGNORE IT.
+5. country: Extract the country FROM THE COUNTERPARTY'S ADDRESS. 
+   - Example: "Tallinn, Estonia" -> Country: "Estonia".
+   - Do NOT default to Turkey unless the address is actually in Turkey.
+6. signed_date: YYYY-MM-DD. Look for handwritten dates.
+7. found_telenity_name: Exact Telenity entity name.
+8. confidence_score: Rate your confidence 0-100 (Integer).
 
 Output JSON:
 {{
