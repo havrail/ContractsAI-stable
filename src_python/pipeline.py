@@ -1,3 +1,4 @@
+# src_python/pipeline.py
 import os
 import io
 import base64
@@ -44,11 +45,8 @@ from config import (
     COMPANY_CHOICES
 )
 
-# Tesseract Configuration
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 TESSERACT_CONFIG = "--oem 1 --psm 6"
-
-# DPI Ayarları
 SCAN_DPI = 100  
 FINAL_DPI = 200 
 
@@ -83,17 +81,15 @@ class PipelineManager:
         key_pages.add(0) 
 
         try:
-            # Metin bazlı sayfa tespiti (Hata alırsa sessizce geçer)
             try:
                 reader = PdfReader(full_path)
-                keywords = ["notices", "tebligat", "adres:", "address:", "registered office"]
+                keywords = ["notices", "tebligat", "adres:", "address:", "registered office", "principal place"]
                 for i, page in enumerate(reader.pages):
                     txt = (page.extract_text() or "").lower()
                     if any(kw in txt for kw in keywords):
                         if "address" in txt and ("street" in txt or "no:" in txt): key_pages.add(i)
                         elif "tebligat" in txt and ("adres" in txt or "no:" in txt): key_pages.add(i)
-            except: 
-                pass # PDF bozuksa veya okunamıyorsa sorun yok, görsel taramaya geç
+            except: pass
 
             logger.info(f"Scanning {num_pages} pages at {SCAN_DPI} DPI for signatures...")
             low_res_images = convert_from_path(full_path, dpi=SCAN_DPI, poppler_path=POPPLER_PATH)
@@ -103,12 +99,11 @@ class PipelineManager:
                     key_pages.add(i)
             if len(key_pages) == 1: key_pages.add(num_pages - 1)
         except Exception as e:
-            logger.error(f"Scan signature error: {e}. Falling back to First/Last.")
+            logger.error(f"Scan signature error: {e}.")
             if num_pages > 1: key_pages.add(num_pages - 1)
 
         sorted_pages = sorted(list(key_pages))
         if len(sorted_pages) > 5:
-            logger.warning(f"Too many pages ({len(sorted_pages)}). Optimizing.")
             optimized = {0, sorted_pages[-1]}
             mid = sorted_pages[1:-1]
             if mid: optimized.update(mid[:3])
@@ -127,9 +122,7 @@ class PipelineManager:
 
     def _clean_signing_party(self, party_name):
         if not party_name: return ""
-        # Ensure string
         party_name = str(party_name)
-        
         if party_name.lower().strip().replace(" ", "") in ["telenity", "telenityfze", "telenityinc"]: return ""
         if " and " in party_name.lower():
             parts = re.split(r' and | & ', party_name, flags=re.IGNORECASE)
@@ -140,7 +133,7 @@ class PipelineManager:
 
     def _clean_contract_name(self, name):
         if not name: return "Belirtilmemiş"
-        name = str(name) # Ensure string
+        name = str(name)
         name = name.replace("<InsertDate>", "").strip()
         if len(name) > 100: name = name[:100]
         if any(x in name.lower() for x in ["agreement is made", "hereinafter", "entered into"]): return ""
@@ -164,11 +157,9 @@ class PipelineManager:
         if "telenity" in sig: return "Telenity Signed"
         return "Telenity Signed"
 
-    # LLM Verisi Temizleme Yardımcısı (HATA 1 ÇÖZÜMÜ)
     def _safe_str(self, data):
-        """Verilen veriyi güvenli bir şekilde stringe çevirir. Dict/List gelirse bozar."""
         if data is None: return ""
-        if isinstance(data, (dict, list)): return "" # Hatalı veri tiplerini yut
+        if isinstance(data, (dict, list)): return "" 
         return str(data).strip()
 
     def process_single_file(self, filename: str, folder_path: str, job_root: str = None) -> Dict[str, Any]:
@@ -209,8 +200,6 @@ class PipelineManager:
             text = ""
             is_scanned = False
             num_pages = 0
-            
-            # HATA 2 ÇÖZÜMÜ: PDF okuma hatası olursa (Corrupt PDF) Scanned moduna geç
             try:
                 reader = PdfReader(full_path)
                 num_pages = len(reader.pages)
@@ -218,16 +207,13 @@ class PipelineManager:
                     txt = page.extract_text()
                     if txt: text += txt + "\n"
             except Exception as e:
-                logger.warning(f"Native read failed (Corrupt PDF?): {e}. Switching to OCR mode.")
-                is_scanned = True # Zorla Taranmış moduna al
-                
-                # Sayfa sayısını poppler ile bulmaya çalış (Yedek plan)
+                logger.warning(f"Native read failed: {e}. Switching to OCR.")
+                is_scanned = True
                 try:
                     from pdf2image import pdfinfo_from_path
                     info = pdfinfo_from_path(full_path, poppler_path=POPPLER_PATH)
                     num_pages = info["Pages"]
-                except:
-                    num_pages = 1 # En kötü ihtimal
+                except: num_pages = 1
 
             if not text or len(text.strip()) < 100:
                 is_scanned = True
@@ -236,7 +222,7 @@ class PipelineManager:
             target_page_indices = self.identify_key_pages(full_path, num_pages)
             llm_images = self.get_optimized_images_for_llm(full_path, target_page_indices)
 
-            if is_scanned and llm_images: # Text boş olsa bile image varsa dene
+            if is_scanned and llm_images: 
                 if not text.strip():
                     logger.info("Running Partial OCR on key pages...")
                     for img in llm_images:
@@ -252,23 +238,24 @@ class PipelineManager:
 
             telenity_search_text = (self._safe_str(llm_data.get("found_telenity_name", "")) or "") + " " + text[:2000]
             telenity_code, telenity_full = determine_telenity_entity(telenity_search_text)
-            
             if USE_VISION_MODEL and (not telenity_code or telenity_code == "Bilinmiyor") and vision_images_b64:
                 vision_res = self.llm_client.detect_telenity_visual(vision_images_b64[0])
                 if vision_res: telenity_code, telenity_full = vision_res
 
             contract_name = self._clean_contract_name(self._safe_str(llm_data.get("contract_name", "")))
-            
             raw_party = self._safe_str(llm_data.get("signing_party", ""))
             final_party = ""
             confidence = 0
+            
             try:
                 confidence = int(llm_data.get("confidence_score", 0))
             except: confidence = 0
 
+            # PARTY TESPİTİ VE GÜVEN SKORU MANTIĞI (GÜNCELLENDİ)
+            party_source = "llm"
             if folder_company_name:
                 final_party = self._clean_signing_party(folder_company_name)
-                confidence = 100 
+                party_source = "folder"
                 logger.info(f"Using Folder Name as Party: '{final_party}'")
             else:
                 final_party = self._clean_signing_party(raw_party)
@@ -277,14 +264,15 @@ class PipelineManager:
                     if filename_company:
                         logger.info(f"Recovered party from filename: '{filename_company}'")
                         final_party = filename_company
+                        party_source = "filename"
 
-            # HATA 1 ÇÖZÜMÜ: _safe_str kullanımı
             raw_address = self._safe_str(llm_data.get("address", ""))
             address = filter_telenity_address(clean_turkish_chars(raw_address))
             
             raw_country = self._safe_str(llm_data.get("country", ""))
             final_country = normalize_country(raw_country)
             
+            # DB'den Tamamlama
             import json
             kb_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "known_companies.json")
             known_db = {}
@@ -293,15 +281,31 @@ class PipelineManager:
                     with open(kb_path, "r", encoding="utf-8") as f: known_db = json.load(f)
                 except: pass
 
-            if final_party and (not address or not final_country):
+            # Fuzzy Match ve Güven Skoru Hesaplama
+            db_match_found = False
+            if final_party:
                 match = find_best_company_match(final_party, known_db, threshold=80)
                 if match:
                     logger.info(f"🧠 Fuzzy Match: '{final_party}' found in DB")
                     if not address: address = match.get("address", "")
                     if not final_country: final_country = match.get("country", "")
-                    confidence = 100
+                    db_match_found = True
 
-            if final_party and address and final_country and len(address) > 10:
+            # GÜVEN SKORU HESABI (REALISTIC SCORING)
+            if db_match_found:
+                confidence = 100 # DB'de varsa tam güven
+            elif party_source == "folder":
+                # Klasörden geldi ama DB'de adresi yoksa, adres LLM'den gelmiştir veya boştur.
+                if address and len(address) > 5:
+                    confidence = 90 # Şirket kesin, adres var
+                else:
+                    confidence = 80 # Şirket kesin, adres yok/şüpheli
+            else:
+                # Sadece LLM bulduysa LLM'in skoruna güven (veya max 80 ver)
+                confidence = min(confidence, 85) 
+
+            # Hafızaya Kaydet
+            if final_party and address and final_country and len(address) > 10 and confidence >= 80:
                 party_key = final_party.lower().strip()
                 should_update = party_key not in known_db or len(address) > len(known_db[party_key].get("address", ""))
                 if should_update:
@@ -309,7 +313,7 @@ class PipelineManager:
                     try:
                         with open(kb_path, "w", encoding="utf-8") as f: json.dump(known_db, f, indent=4, ensure_ascii=False)
                         logger.info(f"🧠 Learned: '{final_party}'")
-                    except Exception as e: logger.warning(f"Could not update memory: {e}")
+                    except: pass
 
             visual_sig_count = len([p for p in target_page_indices if p != 0])
             final_sig = self._map_signature_smart(self._safe_str(llm_data.get("text_signature_status", "")), visual_sig_count)
@@ -342,39 +346,24 @@ class PipelineManager:
             job.status = "RUNNING"; job.message = "Analiz (Smart Scan) başlıyor..."; db.commit()
             connected, _ = self.llm_client.autodetect_connection()
             if not connected: logger.warning("LM Studio bağlantısı yok.")
-            
             all_files_to_process = []
             logger.info(f"Scanning folder recursively: {folder_path}")
             for root, dirs, files in os.walk(folder_path):
                 for f in files:
-                    if f.lower().endswith(".pdf"):
-                        all_files_to_process.append((f, root))
-            
+                    if f.lower().endswith(".pdf"): all_files_to_process.append((f, root))
             total = len(all_files_to_process)
-            if total == 0:
-                job.status = "COMPLETED"; job.message = "Dosya bulunamadı"; db.commit(); return
-
-            processed = 0
-            batches = [all_files_to_process[i:i + BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
-            all_contracts = []
-
+            if total == 0: job.status = "COMPLETED"; job.message = "Dosya bulunamadı"; db.commit(); return
+            processed = 0; batches = [all_files_to_process[i:i + BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]; all_contracts = []
             for batch in batches:
                 db.refresh(job)
                 if job.status == "CANCELLED": break
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                    futures = {
-                        executor.submit(self.process_single_file, f, root, folder_path): f 
-                        for f, root in batch
-                    }
+                    futures = {executor.submit(self.process_single_file, f, root, folder_path): f for f, root in batch}
                     for future in as_completed(futures):
                         res = future.result()
                         if "error" not in res: all_contracts.append(Contract(job_id=job_id, **res))
                         processed += 1
-                        if processed % 2 == 0: 
-                            job.progress = int((processed / total) * 100)
-                            job.message = f"İşleniyor: {processed}/{total}"
-                            db.commit()
-            
+                        if processed % 2 == 0: job.progress = int((processed / total) * 100); job.message = f"İşleniyor: {processed}/{total}"; db.commit()
             if all_contracts: db.bulk_save_objects(all_contracts); db.commit()
             job.status = "COMPLETED"; job.message = f"Tamamlandı ({processed} dosya)"; job.progress = 100; db.commit()
             self.export_to_excel(job_id, folder_path)
