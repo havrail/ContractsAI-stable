@@ -1,3 +1,4 @@
+# src_python/utils.py
 import re
 import unicodedata
 from thefuzz import process, fuzz
@@ -7,23 +8,83 @@ def asciify_text(text):
     if not text: return ""
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
-def correct_month_typos(month_str):
-    """Kullanıcıların dosya ismindeki yazım hatalarını düzeltir (Juna -> June)."""
-    month_str = month_str.lower()
-    corrections = {
-        "juna": "june", "july": "july", "agust": "august", "sept": "september",
-        "oct": "october", "nov": "november", "dec": "december",
-        "ocak": "january", "subat": "february", "nisan": "april"
-    }
-    for wrong, right in corrections.items():
-        if wrong in month_str: return right
-    return month_str
+def extract_company_from_filename(filename):
+    """Dosya isminden Şirket Adını tahmin eder."""
+    if not filename: return None
+    name = filename.rsplit('.', 1)[0]
+    name = re.sub(r'\([^)]*\)', '', name) # Parantez içlerini sil
+    parts = re.split(r'[-_,]', name)
+    
+    ignore_list = set(x.lower() for x in DOC_TYPE_CHOICES)
+    ignore_list.update([
+        "signed", "clean", "copy", "final", "draft", "contract", "agreement", 
+        "telenity", "v1", "v2", "rev", "eng", "tr", "tur", "executed", "scan", "mutual"
+    ])
+    
+    potential_names = []
+    for part in parts:
+        clean_part = part.strip()
+        lower_part = clean_part.lower()
+        
+        if not clean_part: continue
+        if re.search(r'\d{4}', clean_part): continue # İçinde yıl varsa şirket değildir
+        if lower_part in ignore_list: continue
+        if any(ign in lower_part for ign in ["signed", "draft", "copy", "version"]): continue
+        if "telenity" in lower_part: continue
+        if len(clean_part) < 2: continue
+        
+        potential_names.append(clean_part)
+        
+    if potential_names: return potential_names[0] 
+    return None
+
+def extract_contract_name_from_filename(filename):
+    """
+    YENİ: Dosya isminden 'Sözleşme Adı'nı (NDA, Service Agreement vb.) çeker.
+    Mantık: Tarihleri ve Şirket isimlerini at, geriye kalan anlamlı parça Sözleşme Adıdır.
+    """
+    if not filename: return "Agreement" # Fallback
+    
+    name = filename.rsplit('.', 1)[0]
+    # Yaygın ayraçları boşluğa çevir
+    name_clean = re.sub(r'[-_,]', ' ', name)
+    
+    # 1. Tarihleri Sil (YYYY, Month DD vb.)
+    name_clean = re.sub(r'\d{4}', '', name_clean) # Yılı sil
+    name_clean = re.sub(r'\d{1,2}', '', name_clean) # Gün/Ay rakamlarını sil
+    
+    # Ay isimlerini sil
+    months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+              "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+              "ocak", "subat", "mart", "nisan", "mayis", "haziran", "temmuz", "agustos", "eylul", "ekim", "kasim", "aralik"]
+    for m in months:
+        name_clean = re.sub(r'\b' + m + r'\b', '', name_clean, flags=re.IGNORECASE)
+
+    # 2. Gereksiz Kelimeleri Sil
+    stopwords = ["signed", "clean", "copy", "final", "draft", "v1", "v2", "rev", "scan", "executed", "telenity", "fze", "inc", "ltd", "pvt", "corp"]
+    for sw in stopwords:
+        name_clean = re.sub(r'\b' + sw + r'\b', '', name_clean, flags=re.IGNORECASE)
+
+    # 3. Kalanı Temizle
+    # Birden fazla boşluğu teke indir
+    final_name = re.sub(r'\s+', ' ', name_clean).strip()
+    
+    if len(final_name) < 3:
+        return "Agreement" # Çok kısa kaldıysa varsayılan dön
+        
+    return final_name.title()
 
 def extract_date_from_filename(filename):
+    """
+    GÜÇLENDİRİLMİŞ: Dosya isminden tarihi ne pahasına olursa olsun çeker.
+    """
     if not filename: return None
     name = filename.rsplit('.', 1)[0]
     
-    # Regex 1: YYYY-MM-DD
+    # 1. Adım: Ay İsimlerindeki Yazım Hatalarını Düzelt (Juna -> June)
+    name = _correct_month_typos_in_string(name)
+
+    # Regex 1: YYYY-MM-DD (Klasik)
     match = re.search(r'(\d{4})[-_.\s]+(\d{1,2})[-_.\s]+(\d{1,2})', name)
     if match: return f"{match.group(1)}-{int(match.group(2)):02d}-{int(match.group(3)):02d}"
     
@@ -31,19 +92,38 @@ def extract_date_from_filename(filename):
     match = re.search(r'(\d{1,2})[-_.\s]+(\d{1,2})[-_.\s]+(\d{4})', name)
     if match: return f"{match.group(3)}-{int(match.group(2)):02d}-{int(match.group(1)):02d}"
 
-    # Regex 3: YYYY, MonthDD (Yazım hatalarını düzelterek)
-    match = re.search(r'(\d{4})[-_.,\s]+([a-zA-Z]+)[-_.,\s]*(\d{1,2})', name, re.IGNORECASE)
+    # Regex 3: YYYY...Month...Day (Esnek Arama)
+    # Arada ne olursa olsun Yıl, Ay, Gün sırasını arar
+    # Örn: 2025_SomeText_February_24
+    match = re.search(r'(\d{4}).*?([a-zA-Z]+).*?(\d{1,2})', name, re.IGNORECASE)
     if match:
-        month = correct_month_typos(match.group(2))
-        return _parse_month_date(match.group(3), month, match.group(1))
+        date_str = _parse_month_date(match.group(3), match.group(2), match.group(1))
+        if date_str: return date_str
 
-    # Regex 4: DD Month YYYY
-    match = re.search(r'(\d{1,2})[-_.,\s]+([a-zA-Z]+)[-_.,\s]+(\d{4})', name, re.IGNORECASE)
+    # Regex 4: Day...Month...Year
+    match = re.search(r'(\d{1,2}).*?([a-zA-Z]+).*?(\d{4})', name, re.IGNORECASE)
     if match:
-        month = correct_month_typos(match.group(2))
-        return _parse_month_date(match.group(1), month, match.group(3))
+        date_str = _parse_month_date(match.group(1), match.group(2), match.group(3))
+        if date_str: return date_str
 
     return None
+
+def _correct_month_typos_in_string(text):
+    corrections = {
+        "juna": "june", "july": "july", "jul": "july",
+        "agust": "august", "aug": "august",
+        "sept": "september", "sep": "september",
+        "oct": "october", "nov": "november", "dec": "december",
+        "ocak": "january", "subat": "february", "nisan": "april", 
+        "haziran": "june", "temmuz": "july", "agustos": "august", 
+        "eylul": "september", "ekim": "october", "kasim": "november", "aralik": "december"
+    }
+    text_lower = text.lower()
+    for wrong, right in corrections.items():
+        if wrong in text_lower:
+            # Kelimeyi orjinal text içinde bulup değiştir (case insensitive replace zordur, basit replace yapıyoruz)
+            text = re.sub(wrong, right, text, flags=re.IGNORECASE)
+    return text
 
 def _parse_month_date(day, month_str, year):
     months = {
@@ -57,51 +137,25 @@ def _parse_month_date(day, month_str, year):
     return None
 
 def infer_country_from_address(address):
-    """Adresten ülkeyi çıkarır (LLM hatasını düzeltmek için)."""
     if not address: return None
     addr_lower = address.lower()
-    
-    # Genişletilmiş Şehir/Ülke Listesi
     mapping = {
-        # Avrupa / Baltık
         "estonia": "Estonia", "tallinn": "Estonia", "tartu": "Estonia",
-        "uk": "United Kingdom", "london": "United Kingdom", "england": "United Kingdom", "great britain": "United Kingdom",
+        "myanmar": "Myanmar", "yangon": "Myanmar", "burma": "Myanmar",
+        "uk": "United Kingdom", "london": "United Kingdom", "england": "United Kingdom",
         "germany": "Germany", "berlin": "Germany", "munich": "Germany", "gmbh": "Germany",
         "france": "France", "paris": "France", "cedex": "France",
-        "netherlands": "Netherlands", "amsterdam": "Netherlands", "rotterdam": "Netherlands", "holland": "Netherlands",
-        "spain": "Spain", "madrid": "Spain", "barcelona": "Spain",
-        "italy": "Italy", "rome": "Italy", "milan": "Italy",
-        
-        # Asya / Pasifik
-        "singapore": "Singapore", "sg ": "Singapore", " sg": "Singapore", # SG kodu eklendi
+        "uae": "UAE", "dubai": "UAE", "abu dhabi": "UAE",
+        "singapore": "Singapore", "sg ": "Singapore", " sg": "Singapore",
+        "turkey": "Turkey", "istanbul": "Turkey", "ankara": "Turkey", "maslak": "Turkey",
+        "usa": "USA", "ny": "USA", "ca": "USA", "inc.": "USA",
         "malaysia": "Malaysia", "kuala lumpur": "Malaysia",
-        "india": "India", "noida": "India", "gurgaon": "India", "mumbai": "India", "delhi": "India", "bangalore": "India",
-        "myanmar": "Myanmar", "yangon": "Myanmar", "burma": "Myanmar",
-        "china": "China", "beijing": "China", "shanghai": "China", "hong kong": "Hong Kong",
-        "indonesia": "Indonesia", "jakarta": "Indonesia",
-        "pakistan": "Pakistan", "islamabad": "Pakistan", "karachi": "Pakistan",
-        
-        # Orta Doğu / Afrika
-        "uae": "UAE", "dubai": "UAE", "abu dhabi": "UAE", "arab emirates": "UAE",
         "nigeria": "Nigeria", "lagos": "Nigeria", "abuja": "Nigeria",
-        "egypt": "Egypt", "cairo": "Egypt",
-        "saudi": "Saudi Arabia", "riyadh": "Saudi Arabia", "jeddah": "Saudi Arabia", "ksa": "Saudi Arabia",
-        "jordan": "Jordan", "amman": "Jordan",
-        "lebanon": "Lebanon", "beirut": "Lebanon",
-        
-        # Amerika
-        "usa": "USA", "united states": "USA", "new york": "USA", "ny ": "USA", "california": "USA", "inc.": "USA", "llc": "USA",
-        "canada": "Canada", "toronto": "Canada", "vancouver": "Canada",
-        
-        # Türkiye
-        "turkey": "Turkey", "türkiye": "Turkey", "istanbul": "Turkey", "ankara": "Turkey", "izmir": "Turkey", "maslak": "Turkey"
+        "india": "India", "noida": "India", "delhi": "India"
     }
-    
     for key, country in mapping.items():
-        # Kelime sınırlarıyla arama yap veya string içinde ara
-        if key in addr_lower:
+        if re.search(r'\b' + re.escape(key) + r'\b', addr_lower):
             return country
-            
     return None
 
 def clean_turkish_chars(text):
@@ -141,26 +195,7 @@ def determine_telenity_entity(text):
 
 def normalize_country(country_name):
     if not country_name: return ""
-    return country_name.title() # Basitleştirdik, asıl işi infer_country_from_address yapacak
-
-def extract_company_from_filename(filename):
-    # (Eski kodunuzdakiyle aynı kalabilir)
-    if not filename: return None
-    name = filename.rsplit('.', 1)[0]
-    name = re.sub(r'\([^)]*\)', '', name)
-    parts = re.split(r'[-_,]', name)
-    ignore_list = set(x.lower() for x in DOC_TYPE_CHOICES)
-    ignore_list.update(["signed", "clean", "copy", "final", "draft", "contract", "agreement", "telenity", "v1", "v2", "rev", "eng", "tr", "tur", "executed", "scan", "mutual"])
-    potential_names = []
-    for part in parts:
-        clean_part = part.strip()
-        lower_part = clean_part.lower()
-        if not clean_part or re.search(r'\d{4}', clean_part): continue 
-        if lower_part in ignore_list or any(ign in lower_part for ign in ["signed", "draft", "copy", "version"]): continue
-        if "telenity" in lower_part or len(clean_part) < 2: continue
-        potential_names.append(clean_part)
-    if potential_names: return potential_names[0] 
-    return None
+    return country_name.title()
 
 def find_best_company_match(query, company_db, threshold=80):
     if not query or not company_db: return None
