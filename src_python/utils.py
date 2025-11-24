@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from difflib import SequenceMatcher # <--- YENİ: Fuzzy Matching için
 from config import TELENITY_MAP, ADDRESS_BLACKLIST
 
 def asciify_text(text):
@@ -22,8 +23,7 @@ def extract_date_from_filename(filename):
     match = re.search(r'(\d{1,2})[-_.\s]+(\d{1,2})[-_.\s]+(\d{4})', name)
     if match: return f"{match.group(3)}-{int(match.group(2)):02d}-{int(match.group(1)):02d}"
 
-    # 3. YENİ: YYYY, Month DD (Loglarda görülen format: 2025,February24)
-    # 2025,February24 veya 2025_February24
+    # 3. YYYY, Month DD (Loglarda görülen format: 2025,February24)
     match = re.search(r'(\d{4})[-_.,\s]+([a-zA-Z]+)[-_.,\s]*(\d{1,2})', name, re.IGNORECASE)
     if match:
         return _parse_month_date(match.group(3), match.group(2), match.group(1))
@@ -57,24 +57,14 @@ def clean_turkish_chars(text):
     return text
 
 def filter_telenity_address(address):
-    """
-    Adres içinde Telenity'e ait anahtar kelimeler varsa temizler.
-    Kritik Düzeltme: Hem adresi hem de blacklist'i ASCII'ye çevirip karşılaştırır.
-    (Yeşilköy == Yesilkoy)
-    """
     if not address: return ""
-    
-    # Adresi normalize et (Yesilkoy formatına çevir)
     address_ascii = asciify_text(address.lower())
     
     for keyword in ADDRESS_BLACKLIST:
-        # Keyword'ü de normalize et
         keyword_ascii = asciify_text(keyword.lower())
         if keyword_ascii in address_ascii:
-            return "" # Yasaklı kelime varsa komple sil (Telenity adresidir)
+            return "" 
     
-    # Karışık adres durumunda (Örn: "Yesilkoy... ; Bordeaux...")
-    # Noktalı virgül veya ' and ' ile ayrılmışsa ve biri yasaklıysa, diğerini döndür
     splitters = [';', ' and ', ' & ', ' vs ']
     for splitter in splitters:
         if splitter in address:
@@ -83,7 +73,6 @@ def filter_telenity_address(address):
             for part in parts:
                 if not any(asciify_text(kw.lower()) in asciify_text(part.lower()) for kw in ADDRESS_BLACKLIST):
                     valid_parts.append(part.strip())
-            
             if valid_parts:
                 return ", ".join(valid_parts)
 
@@ -100,10 +89,9 @@ def determine_telenity_entity(text):
         if normalized_keyword in normalized_text: return values["code"], values["full"]
     
     if "TURKEY" in upper_text or "ISTANBUL" in upper_text: return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş."
-    return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş." # Default
+    return "TE - Telenity Europe", "Telenity İletişim Sistemleri Sanayi ve Ticaret A.Ş." 
 
 def normalize_country(country_name):
-    # (Bu fonksiyon aynı kalabilir, sorun yok)
     if not country_name: return ""
     name = country_name.lower().strip().replace(".", "")
     mapping = {
@@ -118,3 +106,36 @@ def normalize_country(country_name):
     for key, val in mapping.items():
         if key in name: return val
     return country_name.title()
+
+# --- YENİ EKLENEN FUZZY MATCHING FONKSİYONU ---
+def find_best_company_match(query, company_db, threshold=80):
+    """
+    Verilen şirket ismini (query) hafızadaki (company_db) isimlerle kıyaslar.
+    Benzerlik oranı %80 (threshold) üzerindeyse eşleşeni döndürür.
+    """
+    if not query: return None
+    query_lower = query.lower()
+    
+    best_match = None
+    highest_score = 0
+    
+    for key, data in company_db.items():
+        key_lower = key.lower()
+        
+        # 1. Tam Eşleşme veya Kapsama (Kesin)
+        if key_lower in query_lower or query_lower in key_lower:
+            return data
+            
+        # 2. Fuzzy Benzerlik Hesabı
+        # SequenceMatcher iki metin arasındaki benzerliği 0-100 arası puanlar
+        score = SequenceMatcher(None, query_lower, key_lower).ratio() * 100
+        
+        if score > highest_score:
+            highest_score = score
+            best_match = data
+            
+    # Eşik değerini geçiyorsa döndür
+    if highest_score >= threshold:
+        return best_match
+        
+    return None
