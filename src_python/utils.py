@@ -61,23 +61,47 @@ def infer_country_from_address(address):
     if not address: return None
     addr_lower = address.lower()
     
-    # Şehir/Ülke Anahtar Kelimeleri
+    # Genişletilmiş Şehir/Ülke Listesi
     mapping = {
+        # Avrupa / Baltık
         "estonia": "Estonia", "tallinn": "Estonia", "tartu": "Estonia",
-        "myanmar": "Myanmar", "yangon": "Myanmar", "burma": "Myanmar",
-        "uk": "United Kingdom", "london": "United Kingdom", "england": "United Kingdom",
+        "uk": "United Kingdom", "london": "United Kingdom", "england": "United Kingdom", "great britain": "United Kingdom",
         "germany": "Germany", "berlin": "Germany", "munich": "Germany", "gmbh": "Germany",
         "france": "France", "paris": "France", "cedex": "France",
-        "uae": "UAE", "dubai": "UAE", "abu dhabi": "UAE",
-        "turkey": "Turkey", "istanbul": "Turkey", "ankara": "Turkey", "maslak": "Turkey",
-        "usa": "USA", "ny": "USA", "ca": "USA", "inc.": "USA",
-        "malaysia": "Malaysia", "kuala lumpur": "Malaysia"
+        "netherlands": "Netherlands", "amsterdam": "Netherlands", "rotterdam": "Netherlands", "holland": "Netherlands",
+        "spain": "Spain", "madrid": "Spain", "barcelona": "Spain",
+        "italy": "Italy", "rome": "Italy", "milan": "Italy",
+        
+        # Asya / Pasifik
+        "singapore": "Singapore", "sg ": "Singapore", " sg": "Singapore", # SG kodu eklendi
+        "malaysia": "Malaysia", "kuala lumpur": "Malaysia",
+        "india": "India", "noida": "India", "gurgaon": "India", "mumbai": "India", "delhi": "India", "bangalore": "India",
+        "myanmar": "Myanmar", "yangon": "Myanmar", "burma": "Myanmar",
+        "china": "China", "beijing": "China", "shanghai": "China", "hong kong": "Hong Kong",
+        "indonesia": "Indonesia", "jakarta": "Indonesia",
+        "pakistan": "Pakistan", "islamabad": "Pakistan", "karachi": "Pakistan",
+        
+        # Orta Doğu / Afrika
+        "uae": "UAE", "dubai": "UAE", "abu dhabi": "UAE", "arab emirates": "UAE",
+        "nigeria": "Nigeria", "lagos": "Nigeria", "abuja": "Nigeria",
+        "egypt": "Egypt", "cairo": "Egypt",
+        "saudi": "Saudi Arabia", "riyadh": "Saudi Arabia", "jeddah": "Saudi Arabia", "ksa": "Saudi Arabia",
+        "jordan": "Jordan", "amman": "Jordan",
+        "lebanon": "Lebanon", "beirut": "Lebanon",
+        
+        # Amerika
+        "usa": "USA", "united states": "USA", "new york": "USA", "ny ": "USA", "california": "USA", "inc.": "USA", "llc": "USA",
+        "canada": "Canada", "toronto": "Canada", "vancouver": "Canada",
+        
+        # Türkiye
+        "turkey": "Turkey", "türkiye": "Turkey", "istanbul": "Turkey", "ankara": "Turkey", "izmir": "Turkey", "maslak": "Turkey"
     }
     
     for key, country in mapping.items():
-        # Kelime sınırlarıyla arama yap (örn: 'UK' kelimesini 'Ukraine' içinde bulmasın)
-        if re.search(r'\b' + re.escape(key) + r'\b', addr_lower):
+        # Kelime sınırlarıyla arama yap veya string içinde ara
+        if key in addr_lower:
             return country
+            
     return None
 
 def clean_turkish_chars(text):
