@@ -6,10 +6,10 @@ import traceback
 import hashlib
 import re
 import json
+import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any, Callable
 
-# 3. Party Libs
 from pdf2image import convert_from_path, pdfinfo_from_path
 import pytesseract
 from PIL import Image
@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 import cv2
 import numpy as np
 
-# Local Modules
 from database import SessionLocal, get_db
 from models import AnalysisJob, Contract
 from image_processing import ImageProcessor
@@ -31,6 +30,8 @@ from utils import (
     normalize_country,
     find_best_company_match,
     extract_company_from_filename,
+    extract_contract_name_from_filename,
+    clean_contract_name,
     infer_country_from_address
 )
 from logger import logger
@@ -45,7 +46,6 @@ from config import (
     COMPANY_CHOICES
 )
 
-# Config Init
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 TESSERACT_CONFIG = "--oem 1 --psm 6"
 SCAN_DPI = 100  
@@ -56,10 +56,29 @@ class PipelineManager:
         self.log_callback = log_callback
         self.llm_client = LLMClient()
 
+    # --- YENİ: WINDOWS GÜVENLİ YOL DÜZELTİCİ ---
+    def _get_safe_path(self, path: str) -> str:
+        """
+        Windows'ta uzun yolları ve özel karakterleri işlemek için
+        yolun başına '\\?\' ekler. Errno 22 hatasını çözer.
+        """
+        if platform.system() == "Windows":
+            # Zaten prefix varsa ekleme
+            if path.startswith("\\\\?\\"):
+                return path
+            # Absolute path yap ve prefix ekle
+            abs_path = os.path.abspath(path)
+            if not abs_path.startswith("\\\\?\\"):
+                return f"\\\\?\\{abs_path}"
+            return abs_path
+        return path
+
     def calculate_file_hash(self, filepath: str) -> Optional[str]:
         hash_md5 = hashlib.md5()
         try:
-            with open(filepath, "rb") as f:
+            # Safe path kullanıyoruz
+            safe_path = self._get_safe_path(filepath)
+            with open(safe_path, "rb") as f:
                 for chunk in iter(lambda: f.read(4096), b""):
                     hash_md5.update(chunk)
             return hash_md5.hexdigest()
@@ -82,11 +101,12 @@ class PipelineManager:
     def identify_key_pages(self, full_path: str, num_pages: int) -> List[int]:
         key_pages = set()
         key_pages.add(0) 
+        
+        safe_path = self._get_safe_path(full_path) # Safe Path
 
         try:
-            # Text-based Scan
             try:
-                reader = PdfReader(full_path)
+                reader = PdfReader(safe_path)
                 keywords = ["notices", "tebligat", "adres:", "address:", "registered office"]
                 for i, page in enumerate(reader.pages):
                     txt = (page.extract_text() or "").lower()
@@ -95,8 +115,10 @@ class PipelineManager:
                         elif "tebligat" in txt and ("adres" in txt or "no:" in txt): key_pages.add(i)
             except: pass
 
-            # Visual Scan
             logger.info(f"Scanning {num_pages} pages at {SCAN_DPI} DPI for signatures...")
+            # pdf2image genellikle standart path ister ama Windows'ta sorun çıkarsa safe_path deneyebiliriz.
+            # Ancak poppler bazen \\?\ formatını sevmez. Eğer hata alırsak short path denemeliyiz.
+            # Şimdilik standart path ile deneyip hata olursa logluyoruz.
             low_res_images = convert_from_path(full_path, dpi=SCAN_DPI, poppler_path=POPPLER_PATH)
             for i, img in enumerate(low_res_images):
                 if i == 0: continue
@@ -163,17 +185,20 @@ class PipelineManager:
         return "Telenity Signed"
 
     def _safe_str(self, data):
-        """Dict/List gelirse boş string döndür, aksi halde string yap."""
         if data is None: return ""
         if isinstance(data, (dict, list)): return "" 
         return str(data).strip()
 
     def process_single_file(self, filename: str, folder_path: str, job_root: str = None) -> Dict[str, Any]:
         full_path = os.path.join(folder_path, filename)
+        
+        # GÜVENLİ YOL (HASH İÇİN)
+        safe_full_path = self._get_safe_path(full_path)
+        
         db = None
         try:
-            file_hash = self.calculate_file_hash(full_path)
-            if not file_hash: return {"error": "Hash error", "dosya_adi": filename}
+            file_hash = self.calculate_file_hash(full_path) # İçinde safe_path kullanıyor
+            if not file_hash: return {"error": "Hash error - File access failed", "dosya_adi": filename}
 
             db = next(get_db())
             cached = db.query(Contract).filter(Contract.file_hash == file_hash).first()
@@ -206,9 +231,8 @@ class PipelineManager:
             text = ""
             is_scanned = False
             num_pages = 0
-            
             try:
-                reader = PdfReader(full_path)
+                reader = PdfReader(safe_full_path) # Safe path ile oku
                 num_pages = len(reader.pages)
                 for page in reader.pages: txt = page.extract_text(); text += (txt or "") + "\n"
             except Exception as e:
@@ -234,6 +258,8 @@ class PipelineManager:
                         text += pytesseract.image_to_string(processed, lang="tur+eng", config=TESSERACT_CONFIG) + "\n"
 
             filename_date = extract_date_from_filename(filename)
+            filename_contract_name = extract_contract_name_from_filename(filename)
+
             vision_images_b64 = []
             if USE_VISION_MODEL and llm_images:
                 vision_images_b64 = self._images_to_base64(llm_images)
@@ -246,7 +272,25 @@ class PipelineManager:
                 vision_res = self.llm_client.detect_telenity_visual(vision_images_b64[0])
                 if vision_res: telenity_code, telenity_full = vision_res
 
-            contract_name = self._clean_contract_name(self._safe_str(llm_data.get("contract_name", "")))
+            # --- CONTRACT NAME MANTIĞI (DÜZELTİLDİ) ---
+            raw_llm_title = self._safe_str(llm_data.get("contract_name", ""))
+            llm_contract_name = clean_contract_name(raw_llm_title)
+            
+            final_contract_name = "Agreement"
+            
+            # Kural 1: LLM spesifik bir şey bulduysa (Agreement/Contract hariç) -> KULLAN
+            if llm_contract_name and len(llm_contract_name) > 3 and llm_contract_name.lower() not in ["agreement", "contract", "sözleşme"]:
+                final_contract_name = llm_contract_name
+            # Kural 2: LLM genel konuştuysa, dosya ismine bak
+            elif filename_contract_name and len(filename_contract_name) > 3 and filename_contract_name.lower() not in ["agreement", "contract"]:
+                final_contract_name = filename_contract_name
+                logger.info(f"LLM title weak. Using filename title: '{final_contract_name}'")
+            elif llm_contract_name:
+                final_contract_name = llm_contract_name
+            
+            contract_name = final_contract_name
+            # ------------------------------------------
+
             raw_party = self._safe_str(llm_data.get("signing_party", ""))
             final_party = ""
             confidence = 0
@@ -270,9 +314,11 @@ class PipelineManager:
             raw_country = self._safe_str(llm_data.get("country", ""))
             inferred = infer_country_from_address(address)
             final_country = inferred if inferred else normalize_country(raw_country)
-            final_date = filename_date or self._safe_str(llm_data.get("signed_date", ""))
+            
+            # TARİH: Dosya ismi öncelikli
+            final_date = filename_date if filename_date else self._safe_str(llm_data.get("signed_date", ""))
 
-            # Knowledge Base
+            import json
             kb_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "known_companies.json")
             known_db = {}
             try:
@@ -288,7 +334,6 @@ class PipelineManager:
                     if not final_country: final_country = match.get("country", "")
                     confidence = 100
 
-            # AI Verifier
             should_verify = False
             if confidence < 90: should_verify = True
             if not address or len(address) < 5: should_verify = True
@@ -308,10 +353,14 @@ class PipelineManager:
                     ic = infer_country_from_address(address)
                     final_country = ic if ic else normalize_country(nc)
                     nd = self._safe_str(verified.get("signed_date"))
-                    if nd: final_date = nd
+                    if nd and not filename_date: final_date = nd
+                    
+                    # Contract name düzeltme
+                    vt = clean_contract_name(self._safe_str(verified.get("contract_name")))
+                    if vt and vt != "Agreement": contract_name = vt
+
                     if address and final_country: confidence = 95
 
-            # Score Calculation
             final_score = confidence
             if not final_party: final_score -= 50
             if not address or len(address) < 5: final_score -= 15
@@ -319,7 +368,6 @@ class PipelineManager:
             if not final_date: final_score -= 10
             final_score = max(0, min(100, final_score))
 
-            # Save to Memory
             if final_party and address and final_country and len(address) > 10 and final_score > 80:
                 p_key = final_party.lower().strip()
                 if p_key not in known_db:
@@ -340,7 +388,8 @@ class PipelineManager:
                 "signing_party": final_party, "country": final_country, "address": address,
                 "signed_date": final_date,
                 "telenity_entity": telenity_code, "telenity_fullname": telenity_full,
-                "confidence_score": final_score, "durum_notu": "Tamamlandı", "file_hash": file_hash,
+                "confidence_score": final_score, 
+                "durum_notu": "Tamamlandı", "file_hash": file_hash,
             }
 
         except Exception as e:
@@ -350,8 +399,8 @@ class PipelineManager:
             return {"error": str(e), "dosya_adi": filename}
 
     def run_job(self, job_id: int, folder_path: str):
+        # (Aynı kalabilir, rollback mekanizması zaten eklenmişti)
         db = SessionLocal()
-        # Robust Initial Query
         try:
             job = db.query(AnalysisJob).filter(AnalysisJob.id == job_id).first()
             if not job: db.close(); return
@@ -378,7 +427,6 @@ class PipelineManager:
             all_contracts = []
 
             for batch in batches:
-                # Robust Status Check
                 try:
                     db.refresh(job)
                     if job.status == "CANCELLED": break
@@ -388,13 +436,15 @@ class PipelineManager:
                     if not job: break
 
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                    futures = {executor.submit(self.process_single_file, f, root, folder_path): f for f, root in batch}
+                    futures = {
+                        executor.submit(self.process_single_file, f, root, folder_path): f 
+                        for f, root in batch
+                    }
                     for future in as_completed(futures):
                         res = future.result()
                         if "error" not in res: all_contracts.append(Contract(job_id=job_id, **res))
                         processed += 1
                         
-                        # Robust Progress Update
                         if processed % 2 == 0:
                             try:
                                 job.progress = int((processed / total) * 100)
@@ -403,7 +453,6 @@ class PipelineManager:
                             except Exception as e:
                                 logger.warning(f"Progress update error (ignoring): {e}")
                                 db.rollback()
-                                # Re-fetch to stay in sync for next loop
                                 job = db.query(AnalysisJob).filter(AnalysisJob.id == job_id).first()
             
             if all_contracts:
@@ -414,7 +463,6 @@ class PipelineManager:
                     logger.error(f"Bulk save failed: {e}")
                     db.rollback()
 
-            # Final Status
             try:
                 job = db.query(AnalysisJob).filter(AnalysisJob.id == job_id).first()
                 if job:
