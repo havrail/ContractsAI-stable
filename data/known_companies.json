@@ -1,0 +1,22 @@
+{
+    "Vodafone": {
+        "full_name": "Vodafone Telekomünikasyon A.Ş.",
+        "country": "Turkey",
+        "address": "Büyükdere Caddesi No:251 Maslak, 34398 Sarıyer/İstanbul"
+    },
+    "Turkcell": {
+        "full_name": "Turkcell İletişim Hizmetleri A.Ş.",
+        "country": "Turkey",
+        "address": "Turkcell Küçükyalı Plaza, Aydınevler Mah. İnönü Cad. No:20 Küçükyalı Ofispark B Blok, Maltepe/İstanbul"
+    },
+    "Sam Media": {
+        "full_name": "Sam Media Limited",
+        "country": "Malaysia",
+        "address": "Level 28, The Gardens South Tower, Mid Valley City, Lingkaran Syed Putra, 59200 Kuala Lumpur"
+    },
+    "Google": {
+        "full_name": "Google Reklamcılık ve Pazarlama Ltd. Şti.",
+        "country": "Turkey",
+        "address": "Eski Büyükdere Caddesi No: 209, 34394 Levent/İstanbul"
+    }
+}
