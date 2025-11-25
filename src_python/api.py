@@ -19,6 +19,7 @@ from database import get_db, init_db
 from models import AnalysisJob, Contract
 from logger import logger, set_request_context, clear_context
 from tasks import process_analysis_job  # Celery task
+from feedback_service import FeedbackService  # NEW: Feedback system
 
 # Initialize Sentry for error tracking
 SENTRY_DSN = os.getenv('SENTRY_DSN')
@@ -272,6 +273,28 @@ def get_logs(lines: int = 100, authenticated: bool = Depends(verify_api_key)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading logs: {str(e)}")
 
+@app.get("/logs/download")
+def download_logs(authenticated: bool = Depends(verify_api_key)):
+    """Download system logs as a plain text file."""
+    from fastapi.responses import PlainTextResponse
+    from datetime import datetime
+    
+    log_file = "app.log"
+    if not os.path.exists(log_file):
+        raise HTTPException(status_code=404, detail="Log file not found")
+    
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        filename = f"system_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        return PlainTextResponse(
+            content=content,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading logs: {str(e)}")
+
 @app.post("/system/shutdown")
 def shutdown_system(authenticated: bool = Depends(verify_api_key)):
     """
@@ -442,6 +465,618 @@ def get_metrics(db: Session = Depends(get_db)):
             "avg_contracts_per_job": round(avg_contracts_per_job, 2)
         }
     }
+
+# ============================================================================
+# FEEDBACK & CORRECTION ENDPOINTS (NEW)
+# ============================================================================
+
+class CorrectionRequest(BaseModel):
+    contract_id: int
+    field_name: str
+    old_value: str
+    new_value: str
+    corrected_by: Optional[str] = "user"
+    reason: Optional[str] = None
+
+class BulkCorrectionRequest(BaseModel):
+    corrections: List[CorrectionRequest]
+
+@app.post("/api/corrections")
+def submit_correction(
+    correction: CorrectionRequest,
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key)
+):
+    """
+    Kullanıcının yaptığı manuel düzeltmeyi kaydeder.
+    
+    Bu endpoint, Excel'de veya UI'da yapılan düzeltmeleri
+    sisteme öğretmek için kullanılır.
+    """
+    try:
+        feedback_service = FeedbackService(db)
+        
+        result = feedback_service.record_correction(
+            contract_id=correction.contract_id,
+            field_name=correction.field_name,
+            old_value=correction.old_value,
+            new_value=correction.new_value,
+            corrected_by=correction.corrected_by,
+            reason=correction.reason
+        )
+        
+        return {
+            "success": True,
+            "message": "Correction recorded successfully",
+            "correction_id": result.id
+        }
+    
+    except Exception as e:
+        logger.error(f"Correction recording failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/corrections/bulk")
+def submit_bulk_corrections(
+    request: BulkCorrectionRequest,
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key)
+):
+    """Toplu düzeltme kaydı"""
+    try:
+        feedback_service = FeedbackService(db)
+        
+        corrections_data = [corr.dict() for corr in request.corrections]
+        count = feedback_service.bulk_record_corrections(corrections_data)
+        
+        return {
+            "success": True,
+            "message": f"{count} corrections recorded",
+            "count": count
+        }
+    
+    except Exception as e:
+        logger.error(f"Bulk correction failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/accuracy")
+def get_accuracy_stats(
+    days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """
+    Sistem doğruluk istatistikleri.
+    
+    Query Params:
+        days: Kaç günlük veriyi analiz et (default: 30)
+    """
+    try:
+        feedback_service = FeedbackService(db)
+        report = feedback_service.get_overall_accuracy(days=days)
+        
+        return report
+    
+    except Exception as e:
+        logger.error(f"Accuracy stats failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/accuracy/{field_name}")
+def get_field_accuracy(
+    field_name: str,
+    days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """Belirli bir alanın doğruluk istatistikleri"""
+    try:
+        feedback_service = FeedbackService(db)
+        stats = feedback_service.get_field_accuracy(field_name, days=days)
+        
+        return stats
+    
+    except Exception as e:
+        logger.error(f"Field accuracy failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/common-mistakes/{field_name}")
+def get_common_mistakes(
+    field_name: str,
+    limit: int = 10,
+    days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """Belirli bir alanda en sık yapılan hataları listeler"""
+    try:
+        feedback_service = FeedbackService(db)
+        mistakes = feedback_service.get_common_mistakes(field_name, limit=limit, days=days)
+        
+        return {"field": field_name, "mistakes": mistakes}
+    
+    except Exception as e:
+        logger.error(f"Common mistakes query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reports/weekly")
+def get_weekly_accuracy_report(
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key)
+):
+    """Haftalık doğruluk raporu (text format)"""
+    try:
+        feedback_service = FeedbackService(db)
+        report_text = feedback_service.generate_weekly_report()
+        
+        return {
+            "report": report_text,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Weekly report generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/export/training-data")
+def export_training_data(
+    days: int = 90,
+    min_corrections: int = 3,
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key)
+):
+    """
+    Düzeltmeleri fine-tuning training data'ya export eder.
+    
+    Query Params:
+        days: Kaç günlük veriyi al (default: 90)
+        min_corrections: Minimum düzeltme sayısı filtresi (default: 3)
+    """
+    try:
+        feedback_service = FeedbackService(db)
+        
+        output_path = os.path.join(
+            "data",
+            f"training_corrections_{datetime.utcnow().strftime('%Y%m%d')}.json"
+        )
+        
+        count = feedback_service.export_corrections_to_training_data(
+            output_path=output_path,
+            days=days,
+            min_corrections=min_corrections
+        )
+        
+        return {
+            "success": True,
+            "message": f"Exported {count} training samples",
+            "output_file": output_path,
+            "sample_count": count
+        }
+    
+    except Exception as e:
+        logger.error(f"Training data export failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# REVIEW & QA ENDPOINTS
+# ============================================================================
+
+class ReviewRequest(BaseModel):
+    """Request model for reviewing a contract."""
+    review_status: str  # approved, rejected, corrected
+    reviewed_by: str
+    notes: Optional[str] = None
+
+
+class FieldCorrectionRequest(BaseModel):
+    """Request model for correcting a field."""
+    field_name: str
+    new_value: str
+    old_value: Optional[str] = None
+    corrected_by: str
+    reason: Optional[str] = None
+
+
+@app.get("/api/review/pending")
+async def get_pending_reviews(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Get contracts that need manual review."""
+    verify_api_key(api_key)
+    
+    try:
+        contracts = db.query(Contract).filter(
+            Contract.needs_review == 1,
+            Contract.review_status == "pending"
+        ).order_by(Contract.islenme_zamani.desc()).limit(limit).all()
+        
+        results = []
+        for c in contracts:
+            results.append({
+                "id": c.id,
+                "dosya_adi": c.dosya_adi,
+                "signing_party": c.signing_party,
+                "contract_name": c.contract_name,
+                "signed_date": c.signed_date,
+                "address": c.address,
+                "country": c.country,
+                "confidence_score": c.confidence_score,
+                "review_reason": c.review_reason,
+                "validation_issues": c.validation_issues,
+                "validation_warnings": c.validation_warnings,
+                "islenme_zamani": c.islenme_zamani.isoformat() if c.islenme_zamani else None
+            })
+        
+        return {
+            "total": len(results),
+            "contracts": results
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to get pending reviews: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/review/{contract_id}")
+async def review_contract(
+    contract_id: int,
+    review: ReviewRequest,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Submit review decision for a contract."""
+    verify_api_key(api_key)
+    
+    from audit import AuditLogger
+    audit = AuditLogger(db, user_id=review.reviewed_by)
+    
+    try:
+        contract = db.query(Contract).filter(Contract.id == contract_id).first()
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+        
+        old_status = contract.review_status
+        contract.review_status = review.review_status
+        contract.reviewed_by = review.reviewed_by
+        contract.reviewed_at = datetime.utcnow()
+        
+        if review.review_status == "approved":
+            contract.needs_review = 0
+        
+        db.commit()
+        
+        # Audit log
+        audit.log_review_action(
+            contract_id=contract_id,
+            filename=contract.dosya_adi,
+            review_status=review.review_status,
+            old_status=old_status
+        )
+        
+        logger.info(f"Contract {contract_id} reviewed: {review.review_status} by {review.reviewed_by}")
+        
+        return {
+            "success": True,
+            "contract_id": contract_id,
+            "review_status": review.review_status
+        }
+    
+    except Exception as e:
+        logger.error(f"Review submission failed: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/correct/{contract_id}")
+async def correct_contract_field(
+    contract_id: int,
+    correction: FieldCorrectionRequest,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Correct a specific field in a contract."""
+    verify_api_key(api_key)
+    
+    from audit import AuditLogger
+    from models import Correction
+    
+    audit = AuditLogger(db, user_id=correction.corrected_by)
+    
+    try:
+        contract = db.query(Contract).filter(Contract.id == contract_id).first()
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+        
+        # Get old value
+        old_value = getattr(contract, correction.field_name, None)
+        
+        # Update field
+        setattr(contract, correction.field_name, correction.new_value)
+        contract.review_status = "corrected"
+        contract.reviewed_by = correction.corrected_by
+        contract.reviewed_at = datetime.utcnow()
+        
+        # Store correction record
+        correction_record = Correction(
+            contract_id=contract_id,
+            field_name=correction.field_name,
+            old_value=str(old_value) if old_value else "",
+            new_value=correction.new_value,
+            corrected_by=correction.corrected_by,
+            corrected_at=datetime.utcnow(),
+            correction_reason=correction.reason,
+            confidence_before=contract.confidence_score
+        )
+        db.add(correction_record)
+        
+        db.commit()
+        
+        # Audit log
+        audit.log_field_correction(
+            contract_id=contract_id,
+            field_name=correction.field_name,
+            old_value=str(old_value) if old_value else "",
+            new_value=correction.new_value,
+            correction_reason=correction.reason
+        )
+        
+        logger.info(
+            f"Field corrected: {correction.field_name} in contract {contract_id} "
+            f"by {correction.corrected_by}"
+        )
+        
+        return {
+            "success": True,
+            "contract_id": contract_id,
+            "field_name": correction.field_name,
+            "old_value": old_value,
+            "new_value": correction.new_value
+        }
+    
+    except Exception as e:
+        logger.error(f"Field correction failed: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/audit/stats")
+async def get_audit_stats(
+    days: int = 7,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Get audit statistics for monitoring dashboard."""
+    verify_api_key(api_key)
+    
+    from audit import get_audit_stats
+    
+    try:
+        stats = get_audit_stats(db, days=days)
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get audit stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/audit/logs")
+async def get_audit_logs(
+    limit: int = 50,
+    action_type: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Get recent audit logs."""
+    verify_api_key(api_key)
+    
+    from audit import get_recent_audit_logs
+    
+    try:
+        logs = get_recent_audit_logs(
+            db=db,
+            limit=limit,
+            action_type=action_type,
+            entity_type=entity_type,
+            user_id=user_id
+        )
+        return {"total": len(logs), "logs": logs}
+    except Exception as e:
+        logger.error(f"Failed to get audit logs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/exports/history")
+async def get_export_history(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Get export version history."""
+    verify_api_key(api_key)
+    
+    from deduplication import ExportVersionControl
+    
+    try:
+        service = ExportVersionControl(db)
+        history = service.get_export_history(limit=limit)
+        return {"total": len(history), "versions": history}
+    except Exception as e:
+        logger.error(f"Failed to get export history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/exports/compare/{version1}/{version2}")
+async def compare_export_versions(
+    version1: int,
+    version2: int,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Compare two export versions."""
+    verify_api_key(api_key)
+    
+    from deduplication import ExportVersionControl
+    
+    try:
+        service = ExportVersionControl(db)
+        comparison = service.compare_versions(version1, version2)
+        return comparison
+    except Exception as e:
+        logger.error(f"Failed to compare versions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# A/B TESTING & FOLDER AUTOMATION ENDPOINTS
+# ============================================================================
+
+class OrganizeRequest(BaseModel):
+    """Request model for folder organization."""
+    method: str  # type, company, date, confidence, hierarchical
+    output_dir: Optional[str] = "organized_contracts"
+
+
+@app.post("/api/organize")
+async def organize_contracts_endpoint(
+    request: OrganizeRequest,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Organize processed contracts into folders."""
+    verify_api_key(api_key)
+    
+    from folder_automation import organize_contracts
+    
+    try:
+        # Get all contracts
+        contracts = db.query(Contract).all()
+        
+        contract_dicts = [
+            {
+                'dosya_adi': c.dosya_adi,
+                'contract_name': c.contract_name,
+                'signing_party': c.signing_party,
+                'signed_date': c.signed_date,
+                'confidence_score': c.confidence_score
+            }
+            for c in contracts
+        ]
+        
+        # Organize (assumes source PDFs still exist)
+        # In production, you'd need to track original file locations
+        result = organize_contracts(
+            contract_dicts,
+            source_folder="input_pdfs",  # Configure this
+            method=request.method,
+            output_dir=request.output_dir
+        )
+        
+        return {
+            "success": True,
+            "method": request.method,
+            "folders_created": len(result),
+            "files_organized": sum(len(v) for v in result.values()),
+            "output_dir": request.output_dir
+        }
+    
+    except Exception as e:
+        logger.error(f"Organization failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ab-test/run")
+async def run_ab_test_endpoint(
+    days: int = 7,
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Run A/B test on prompt variants."""
+    verify_api_key(api_key)
+    
+    from ab_testing import run_prompt_ab_test
+    
+    try:
+        result = run_prompt_ab_test(db, days=days)
+        
+        if not result:
+            return {
+                "success": False,
+                "message": "Need at least 2 active variants"
+            }
+        
+        return {
+            "success": True,
+            "winner": result.winner,
+            "confidence": result.confidence_level,
+            "recommendation": result.recommendation,
+            "test_duration_days": result.test_duration_days,
+            "metrics": {
+                variant_id: {
+                    "total_contracts": m.total_contracts,
+                    "avg_confidence": m.avg_confidence,
+                    "correction_rate": m.correction_rate,
+                    "review_rate": m.review_rate,
+                    "field_accuracy": m.field_accuracy
+                }
+                for variant_id, m in result.metrics.items()
+            }
+        }
+    
+    except Exception as e:
+        logger.error(f"A/B test failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ab-test/variants")
+async def get_ab_test_variants(
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Get list of prompt variants."""
+    verify_api_key(api_key)
+    
+    from ab_testing import ABTestManager
+    
+    try:
+        manager = ABTestManager(db)
+        variants = manager.get_active_variants()
+        
+        return {
+            "total": len(variants),
+            "variants": [
+                {
+                    "id": v.id,
+                    "name": v.name,
+                    "description": v.description,
+                    "is_active": v.is_active
+                }
+                for v in variants
+            ]
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to get variants: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ab-test/best-prompt")
+async def get_best_prompt(
+    db: Session = Depends(get_db),
+    api_key: str = Security(api_key_header)
+):
+    """Get best performing prompt variant."""
+    verify_api_key(api_key)
+    
+    from ab_testing import get_best_prompt_variant
+    
+    try:
+        best = get_best_prompt_variant(db)
+        return {"best_variant": best}
+    except Exception as e:
+        logger.error(f"Failed to get best prompt: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 
 if __name__ == "__main__":
     import uvicorn

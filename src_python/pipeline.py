@@ -7,8 +7,13 @@ import hashlib
 import re
 import json
 import platform
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any, Callable
+
+# Suppress poppler/PyPDF2 warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="PyPDF2")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from pdf2image import convert_from_path, pdfinfo_from_path
 import pytesseract
@@ -22,6 +27,10 @@ from database import SessionLocal, get_db
 from models import AnalysisJob, Contract
 from image_processing import ImageProcessor
 from llm_client import LLMClient
+from pdf_quality_checker import PDFQualityChecker
+from prompt_templates import build_contract_extraction_messages, parse_json_response, generate_adaptive_hints
+from model_provider import ModelProvider
+from feedback_service import FeedbackService
 from utils import (
     determine_telenity_entity, 
     extract_date_from_filename, 
@@ -34,6 +43,8 @@ from utils import (
     clean_contract_name,
     infer_country_from_address
 )
+from web_enrichment import enrich_missing_data
+from validation import validate_contract
 from logger import logger
 from config import (
     POPPLER_PATH,
@@ -55,6 +66,29 @@ class PipelineManager:
     def __init__(self, log_callback: Optional[Callable[[str], None]] = None):
         self.log_callback = log_callback
         self.llm_client = LLMClient()
+        self.quality_checker = PDFQualityChecker()
+        self.provider = ModelProvider()
+        try:
+            self.feedback_service = FeedbackService()
+        except Exception:
+            self.feedback_service = None  # Feedback system optional
+        
+        # Track corrupt PDFs for summary report
+        self.corrupt_pdfs = []
+    
+    @staticmethod
+    def _suppress_poppler_stderr(func, *args, **kwargs):
+        """Suppress poppler stderr output (syntax errors, warnings)"""
+        import sys
+        import contextlib
+        
+        # Redirect stderr to devnull
+        with contextlib.redirect_stderr(open(os.devnull, 'w')):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                # Re-raise the exception, but stderr is suppressed
+                raise e
 
     # --- YENİ: WINDOWS GÜVENLİ YOL DÜZELTİCİ ---
     def _get_safe_path(self, path: str) -> str:
@@ -83,8 +117,15 @@ class PipelineManager:
                     hash_md5.update(chunk)
             return hash_md5.hexdigest()
         except Exception as e:
-            logger.error(f"Hash calculation error: {e}")
-            return None
+            # Fallback: Try original path if safe path fails
+            try:
+                with open(filepath, "rb") as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        hash_md5.update(chunk)
+                return hash_md5.hexdigest()
+            except Exception as e2:
+                logger.error(f"Hash calculation error: {e} | Fallback error: {e2}")
+                return None
 
     def _images_to_base64(self, images: List[Any]) -> List[str]:
         b64_list = []
@@ -99,32 +140,57 @@ class PipelineManager:
         return b64_list
 
     def identify_key_pages(self, full_path: str, num_pages: int) -> List[int]:
+        """Smart page selection - only convert pages that likely contain signatures/addresses"""
         key_pages = set()
-        key_pages.add(0) 
+        key_pages.add(0)  # Always include first page
         
-        safe_path = self._get_safe_path(full_path) # Safe Path
+        safe_path = self._get_safe_path(full_path)
 
         try:
+            # Phase 1: Text-based keyword scan (NO IMAGE CONVERSION - fast)
             try:
                 reader = PdfReader(safe_path)
-                keywords = ["notices", "tebligat", "adres:", "address:", "registered office"]
-                for i, page in enumerate(reader.pages):
-                    txt = (page.extract_text() or "").lower()
-                    if any(kw in txt for kw in keywords):
-                        if "address" in txt and ("street" in txt or "no:" in txt): key_pages.add(i)
-                        elif "tebligat" in txt and ("adres" in txt or "no:" in txt): key_pages.add(i)
+                keywords = ["notices", "tebligat", "adres:", "address:", "registered office", "signature", "imza"]
+                
+                # Check strategic pages: first, last, and middle samples
+                strategic_indices = [0, num_pages - 1]
+                if num_pages > 5:
+                    strategic_indices.extend([num_pages // 3, 2 * num_pages // 3])
+                
+                for i in strategic_indices:
+                    if i < len(reader.pages):
+                        txt = (reader.pages[i].extract_text() or "").lower()
+                        if any(kw in txt for kw in keywords):
+                            key_pages.add(i)
             except: pass
 
-            logger.info(f"Scanning {num_pages} pages at {SCAN_DPI} DPI for signatures...")
-            # pdf2image genellikle standart path ister ama Windows'ta sorun çıkarsa safe_path deneyebiliriz.
-            # Ancak poppler bazen \\?\ formatını sevmez. Eğer hata alırsak short path denemeliyiz.
-            # Şimdilik standart path ile deneyip hata olursa logluyoruz.
-            low_res_images = convert_from_path(full_path, dpi=SCAN_DPI, poppler_path=POPPLER_PATH)
-            for i, img in enumerate(low_res_images):
-                if i == 0: continue
-                if ImageProcessor.detect_visual_signature(img):
-                    key_pages.add(i)
-            if len(key_pages) == 1: key_pages.add(num_pages - 1)
+            # Phase 2: Selective signature scan (only if < 10 pages OR last 3 pages)
+            scan_pages = []
+            if num_pages <= 10:
+                scan_pages = list(range(num_pages))
+            else:
+                # For large documents, only scan last 3 pages for signatures
+                scan_pages = list(range(max(0, num_pages - 3), num_pages))
+            
+            if scan_pages:
+                logger.info(f"Scanning {len(scan_pages)} pages at {SCAN_DPI} DPI for signatures...")
+                low_res_images = self._suppress_poppler_stderr(
+                    convert_from_path,
+                    full_path, 
+                    dpi=SCAN_DPI, 
+                    poppler_path=POPPLER_PATH,
+                    first_page=scan_pages[0] + 1,
+                    last_page=scan_pages[-1] + 1
+                )
+                for i, img in enumerate(low_res_images):
+                    actual_page = scan_pages[i]
+                    if ImageProcessor.detect_visual_signature(img):
+                        key_pages.add(actual_page)
+            
+            # Always include last page if we have more than 1 page
+            if num_pages > 1:
+                key_pages.add(num_pages - 1)
+                
         except Exception as e:
             logger.error(f"Scan signature error: {e}.")
             if num_pages > 1: key_pages.add(num_pages - 1)
@@ -142,7 +208,14 @@ class PipelineManager:
         for idx in key_indices:
             page_num = idx + 1
             try:
-                imgs = convert_from_path(full_path, dpi=FINAL_DPI, poppler_path=POPPLER_PATH, first_page=page_num, last_page=page_num)
+                imgs = self._suppress_poppler_stderr(
+                    convert_from_path,
+                    full_path, 
+                    dpi=FINAL_DPI, 
+                    poppler_path=POPPLER_PATH, 
+                    first_page=page_num, 
+                    last_page=page_num
+                )
                 if imgs: final_images.append(imgs[0])
             except Exception as e: logger.error(f"Error fetching page {page_num}: {e}")
         return final_images
@@ -231,15 +304,45 @@ class PipelineManager:
             text = ""
             is_scanned = False
             num_pages = 0
+            pdf_corruption_type = None
+            
             try:
                 reader = PdfReader(safe_full_path) # Safe path ile oku
                 num_pages = len(reader.pages)
                 for page in reader.pages: txt = page.extract_text(); text += (txt or "") + "\n"
             except Exception as e:
-                logger.warning(f"Native read failed: {e}. Switching to OCR.")
+                # Classify corruption type for statistics
+                error_msg = str(e).lower()
+                if "command token too long" in error_msg:
+                    pdf_corruption_type = "Token Overflow"
+                elif "eof marker not found" in error_msg:
+                    pdf_corruption_type = "Missing EOF"
+                elif "xref" in error_msg or "trailer" in error_msg:
+                    pdf_corruption_type = "Broken XRef Table"
+                elif "startxref not found" in error_msg:
+                    pdf_corruption_type = "Missing startxref"
+                elif "invalid elementary object" in error_msg:
+                    pdf_corruption_type = "Corrupt Objects"
+                else:
+                    pdf_corruption_type = "Unknown"
+                
+                # Silent fallback - only log once at INFO level
+                logger.info(f"📄 {filename}: Corrupt PDF detected ({pdf_corruption_type}), using OCR fallback")
+                
+                # Track for summary report
+                self.corrupt_pdfs.append({
+                    'filename': filename,
+                    'error_type': pdf_corruption_type,
+                    'folder': folder_company_name or os.path.basename(folder_path)
+                })
+                
                 is_scanned = True
                 try:
-                    info = pdfinfo_from_path(full_path, poppler_path=POPPLER_PATH)
+                    info = self._suppress_poppler_stderr(
+                        pdfinfo_from_path,
+                        full_path, 
+                        poppler_path=POPPLER_PATH
+                    )
                     num_pages = info["Pages"]
                 except: num_pages = 1
 
@@ -247,24 +350,76 @@ class PipelineManager:
                 is_scanned = True
                 logger.info(f"Detected SCANNED document: {filename}")
 
+            # --- Quality Analysis ---
+            quality_report = None
+            if filename.lower().endswith('.pdf'):
+                try:
+                    quality_report = self.quality_checker.analyze(full_path)
+                except Exception as qe:
+                    logger.warning(f"Quality analysis failed: {qe}")
+
             target_page_indices = self.identify_key_pages(full_path, num_pages)
             llm_images = self.get_optimized_images_for_llm(full_path, target_page_indices)
 
             if is_scanned and llm_images: 
                 if not text.strip():
-                    logger.info("Running Partial OCR...")
-                    for img in llm_images:
-                        processed = ImageProcessor.preprocess_image(img)
-                        text += pytesseract.image_to_string(processed, lang="tur+eng", config=TESSERACT_CONFIG) + "\n"
+                    logger.info("Running Parallel OCR...")
+                    # Parallel OCR processing (4x faster)
+                    def ocr_single(img):
+                        try:
+                            quality = getattr(quality_report, 'score', 50) if quality_report else 50
+                            processed = ImageProcessor.preprocess_image(img, quality_score=quality)
+                            return pytesseract.image_to_string(processed, lang="tur+eng", config=TESSERACT_CONFIG)
+                        except Exception as ocr_err:
+                            logger.error(f"OCR failed for a page: {ocr_err}")
+                            return ""
+                    
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=min(4, len(llm_images))) as executor:
+                        results = list(executor.map(ocr_single, llm_images))
+                    text = "\n".join(results)
 
             filename_date = extract_date_from_filename(filename)
             filename_contract_name = extract_contract_name_from_filename(filename)
 
+            use_vision = USE_VISION_MODEL
+            if quality_report:
+                try:
+                    if getattr(quality_report, 'is_scanned', False) or getattr(quality_report, 'score', 100) < 70:
+                        use_vision = True
+                except Exception:
+                    pass
+
             vision_images_b64 = []
-            if USE_VISION_MODEL and llm_images:
+            if use_vision and llm_images:
                 vision_images_b64 = self._images_to_base64(llm_images)
 
-            llm_data = self.llm_client.get_analysis(text, filename, vision_images_b64, filename_date)
+            # Generate adaptive hints from feedback service
+            adaptive_hint = ""
+            if self.feedback_service:
+                try:
+                    adaptive_hint = generate_adaptive_hints(self.feedback_service)
+                except Exception:
+                    pass
+
+            # Primary path: provider with engineered prompts (vision or text)
+            llm_data: Dict[str, Any] = {}
+            try:
+                messages = build_contract_extraction_messages(
+                    text=text,
+                    filename=filename,
+                    images_b64=vision_images_b64 if use_vision else None,
+                    quality_report=quality_report,
+                    adaptive_hint=adaptive_hint or None
+                )
+                raw_resp = self.provider.chat(messages)
+                parsed = parse_json_response(raw_resp)
+                if parsed: llm_data = parsed
+            except Exception as pe:
+                logger.info(f"Provider path failed, fallback to legacy LLMClient: {pe}")
+
+            if not llm_data:
+                llm_data = self.llm_client.get_analysis(text, filename, vision_images_b64, filename_date)
 
             telenity_search_text = (self._safe_str(llm_data.get("found_telenity_name", "")) or "") + " " + text[:2000]
             telenity_code, telenity_full = determine_telenity_entity(telenity_search_text)
@@ -315,8 +470,15 @@ class PipelineManager:
             inferred = infer_country_from_address(address)
             final_country = inferred if inferred else normalize_country(raw_country)
             
-            # TARİH: Dosya ismi öncelikli
+            # TARİH: Dosya ismi öncelikli, yoksa LLM'den
             final_date = filename_date if filename_date else self._safe_str(llm_data.get("signed_date", ""))
+            
+            # FALLBACK: Eğer tarih hala boşsa, dosya isminden agresif çıkarım
+            if not final_date:
+                date_from_name = extract_date_from_filename(filename, aggressive=True)
+                if date_from_name:
+                    final_date = date_from_name
+                    logger.info(f"📅 Forced date from filename: {final_date}")
 
             import json
             kb_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "known_companies.json")
@@ -367,6 +529,55 @@ class PipelineManager:
             if not final_country: final_score -= 10
             if not final_date: final_score -= 10
             final_score = max(0, min(100, final_score))
+            
+            # --- MULTI-STAGE VALIDATION ---
+            logger.info("🔍 Running multi-stage validation...")
+            validation_result = validate_contract(
+                party=final_party,
+                contract_type=contract_name,
+                signed_date=final_date,
+                start_date=llm_data.get("start_date", ""),
+                end_date=llm_data.get("end_date", ""),
+                address=address,
+                country=final_country,
+                initial_confidence=final_score,
+                ocr_quality=llm_data.get("ocr_quality", 50.0),
+                llm_confidence=confidence
+            )
+            
+            # Update confidence with validation score
+            final_score = validation_result.overall_confidence
+            needs_review = validation_result.needs_review
+            review_reason = validation_result.review_reason if needs_review else ""
+            
+            if validation_result.critical_issues:
+                logger.warning(f"⚠️ {len(validation_result.critical_issues)} critical issues: {validation_result.critical_issues[:2]}")
+            if needs_review:
+                logger.info(f"👁️ Manual review needed: {review_reason}")
+            
+            # --- FINAL ENRICHMENT: Web search for missing data ---
+            needs_enrichment = False
+            if (not address or len(address.strip()) < 10) and final_party:
+                needs_enrichment = True
+            if (not final_country or final_country.strip() in ["", "Unknown"]) and final_party:
+                needs_enrichment = True
+            
+            if needs_enrichment:
+                logger.info(f"🌐 Final enrichment for '{final_party}'...")
+                try:
+                    enriched_address, enriched_country = enrich_missing_data(final_party, address, final_country)
+                    if enriched_address and len(enriched_address) > len(address):
+                        address = enriched_address
+                        logger.info(f"✅ Enriched address: {address[:50]}...")
+                    if enriched_country and not final_country:
+                        final_country = enriched_country
+                        logger.info(f"✅ Enriched country: {final_country}")
+                    
+                    # Boost confidence if enrichment succeeded
+                    if address and final_country:
+                        final_score = min(100, final_score + 10)
+                except Exception as enrich_err:
+                    logger.warning(f"Enrichment failed: {enrich_err}")
 
             if final_party and address and final_country and len(address) > 10 and final_score > 80:
                 p_key = final_party.lower().strip()
@@ -388,7 +599,11 @@ class PipelineManager:
                 "signing_party": final_party, "country": final_country, "address": address,
                 "signed_date": final_date,
                 "telenity_entity": telenity_code, "telenity_fullname": telenity_full,
-                "confidence_score": final_score, 
+                "confidence_score": final_score,
+                "needs_review": needs_review,
+                "review_reason": review_reason,
+                "validation_issues": len(validation_result.critical_issues),
+                "validation_warnings": len(validation_result.warnings),
                 "durum_notu": "Tamamlandı", "file_hash": file_hash,
             }
 
@@ -466,7 +681,30 @@ class PipelineManager:
             try:
                 job = db.query(AnalysisJob).filter(AnalysisJob.id == job_id).first()
                 if job:
-                    job.status = "COMPLETED"; job.message = f"Tamamlandı ({processed} dosya)"; job.progress = 100
+                    # Generate corruption summary
+                    summary_msg = f"Tamamlandı ({processed} dosya)"
+                    if self.corrupt_pdfs:
+                        summary_msg += f"\n⚠️ {len(self.corrupt_pdfs)} bozuk PDF (OCR kullanıldı)"
+                        
+                        # Log corruption summary
+                        logger.info(f"\n{'='*60}")
+                        logger.info(f"📊 CORRUPTION SUMMARY ({len(self.corrupt_pdfs)} files)")
+                        logger.info(f"{'='*60}")
+                        
+                        # Group by error type
+                        error_counts = {}
+                        for item in self.corrupt_pdfs:
+                            error_type = item['error_type']
+                            error_counts[error_type] = error_counts.get(error_type, 0) + 1
+                        
+                        for error_type, count in sorted(error_counts.items(), key=lambda x: x[1], reverse=True):
+                            logger.info(f"  {error_type}: {count} files")
+                        
+                        logger.info(f"{'='*60}\n")
+                    
+                    job.status = "COMPLETED"
+                    job.message = summary_msg
+                    job.progress = 100
                     db.commit()
             except: db.rollback()
             

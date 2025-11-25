@@ -1,11 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Calendar, MapPin, User, Building2, CheckCircle2, Eye } from 'lucide-react';
-import PDFPreview from './PDFPreview';
+import { FileText, Calendar, MapPin, User, Building2, CheckCircle2 } from 'lucide-react';
 
 export default function ResultsTable({ data }) {
-    const [previewFile, setPreviewFile] = useState(null);
-
     if (!data || data.length === 0) return null;
 
     return (
@@ -43,14 +40,6 @@ export default function ResultsTable({ data }) {
                                         {row.dosya_adi}
                                     </div>
                                     <div className="text-xs text-gray-500">{row.doc_type}</div>
-                                    {/* Preview Button */}
-                                    <button
-                                        onClick={() => setPreviewFile(row.dosya_adi)}
-                                        className="mt-2 flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600/30 transition-colors text-sm"
-                                    >
-                                        <Eye className="w-4 h-4" />
-                                        <span>Önizle</span>
-                                    </button>
                                 </div>
 
                                 {/* Contract Info */}
@@ -100,14 +89,6 @@ export default function ResultsTable({ data }) {
                     ))}
                 </div>
             </motion.div>
-
-            {/* PDF Preview Modal */}
-            {previewFile && (
-                <PDFPreview
-                    pdfUrl={`http://localhost:8000/api/pdf/${previewFile}`}
-                    onClose={() => setPreviewFile(null)}
-                />
-            )}
         </>
     );
 }

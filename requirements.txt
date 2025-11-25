@@ -26,6 +26,25 @@ flower
 # Error Tracking & Monitoring
 sentry-sdk[fastapi]
 
+# --- Fine-tuning & Model Integration (Qwen / Llama LoRA) ---
+transformers>=4.44.0
+peft>=0.11.0
+accelerate>=0.31.0
+datasets>=2.20.0
+bitsandbytes; platform_system == "Linux"
+huggingface_hub
+sentencepiece
+protobuf
+einops
+torchvision
+Pillow
+
+# Optional: llama.cpp Python binding (for local GGUF serving)
+llama-cpp-python>=0.2.80
+
+# Optional: Ollama client
+ollama==0.1.7
+
 
 
 

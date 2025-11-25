@@ -72,7 +72,17 @@ def extract_company_from_filename(filename):
     if potential_names: return potential_names[0] 
     return None
 
-def extract_date_from_filename(filename):
+def extract_date_from_filename(filename, aggressive=False):
+    """
+    Extract date from filename.
+    
+    Args:
+        filename: File name to parse
+        aggressive: If True, try harder with less strict patterns
+    
+    Returns:
+        Date string in YYYY-MM-DD format or None
+    """
     if not filename: return None
     name = filename.rsplit('.', 1)[0]
     name = _correct_month_typos_in_string(name) # Juna -> June düzeltmesi
@@ -92,6 +102,35 @@ def extract_date_from_filename(filename):
     if match:
         date_str = _parse_month_date(match.group(1), match.group(2), match.group(3))
         if date_str: return date_str
+    
+    # Aggressive mode: Try to find any 4-digit year
+    if aggressive:
+        match = re.search(r'\b(20\d{2}|19\d{2})\b', name)
+        if match:
+            year = match.group(1)
+            # Try to find month nearby
+            month_match = re.search(r'([a-zA-Z]{3,})', name[max(0, match.start()-20):match.end()+20], re.IGNORECASE)
+            if month_match:
+                month_str = month_match.group(1).lower()
+                months = {
+                    "jan": "01", "january": "01", "ocak": "01",
+                    "feb": "02", "february": "02", "subat": "02", "şubat": "02",
+                    "mar": "03", "march": "03", "mart": "03",
+                    "apr": "04", "april": "04", "nisan": "04",
+                    "may": "05", "mayis": "05", "mayıs": "05",
+                    "jun": "06", "june": "06", "haziran": "06",
+                    "jul": "07", "july": "07", "temmuz": "07",
+                    "aug": "08", "august": "08", "agustos": "08", "ağustos": "08",
+                    "sep": "09", "september": "09", "eylul": "09", "eylül": "09",
+                    "oct": "10", "october": "10", "ekim": "10",
+                    "nov": "11", "november": "11", "kasim": "11", "kasım": "11",
+                    "dec": "12", "december": "12", "aralik": "12", "aralık": "12"
+                }
+                for month_key, month_num in months.items():
+                    if month_key in month_str:
+                        return f"{year}-{month_num}-01"
+            # Fallback: Just year with 01-01
+            return f"{year}-01-01"
 
     return None
 

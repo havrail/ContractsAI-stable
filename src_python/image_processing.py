@@ -3,19 +3,27 @@ import numpy as np
 
 class ImageProcessor:
     @staticmethod
-    def preprocess_image(pil_image):
-        # (Bu kısım aynı kalsın, değişiklik yok)
+    def preprocess_image(pil_image, quality_score=50):
+        """Adaptive preprocessing based on image quality (optimized)"""
         img = np.array(pil_image)
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        gray = clahe.apply(gray)
-        gray = cv2.medianBlur(gray, 3)
-        binary = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-        )
-        denoised = cv2.fastNlMeansDenoising(binary, None, 30, 7, 21)
-        return denoised
+        
+        # High quality - minimal processing
+        if quality_score >= 80:
+            return cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        
+        # Medium quality - adaptive threshold only
+        elif quality_score >= 60:
+            return cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                         cv2.THRESH_BINARY, 11, 2)
+        
+        # Low quality - CLAHE + adaptive (skip slow denoising)
+        else:
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            gray = clahe.apply(gray)
+            return cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                         cv2.THRESH_BINARY, 11, 2)
 
     @staticmethod
     def detect_visual_signature(pil_image):

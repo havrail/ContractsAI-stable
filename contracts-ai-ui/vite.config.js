@@ -9,7 +9,7 @@ export default defineConfig({
   clearScreen: false,
   server: {
     port: 5174,
-    strictPort: true,
+    strictPort: false,  // Allow fallback to next available port
     host: host || false,
     hmr: host
       ? {
